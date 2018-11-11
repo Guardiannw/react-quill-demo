@@ -3,22 +3,30 @@ import ReactDOM from "react-dom";
 import Quill from "quill";
 import {
   path,
+  compose,
+  type,
+  __,
   reject,
   always,
   identity,
   map,
   prop,
   join,
+  invoker,
   pick,
   isNil,
   isEmpty,
   when,
   or,
+  reverse,
+  prepend,
   useWith,
   has,
   split,
   equals,
+  bind,
   chain,
+  reduce,
   append
 } from "ramda";
 
@@ -65,16 +73,16 @@ const modules = {
 };
 
 const formats = [
-  //   "header",
+  "header",
   //   "font",
   //   "size",
   "bold",
   "italic",
-  "underline"
+  "underline",
   //   "strike",
-  //   "blockquote",
-  //   "list",
-  //   "bullet",
+  //     "blockquote",
+  "list",
+  "bullet"
   //   "indent",
   //   "link",
   //   "image",
@@ -128,42 +136,60 @@ const QuillEditor = props => {
 const replaceArr = (cond, mapping, arr) => map(when(cond, mapping), arr);
 const replaceEl = useWith(replaceArr, [equals, always, identity]);
 
-const Deltas = ({ deltas }) => {
-  if (isNilOrEmpty(deltas)) return null;
+const Deltas = ({ delta }) => {
+  if (isNilOrEmpty(delta)) return null;
 
-  return map(op => {
+  console.log(prop("ops", delta));
+  let reversedOps = reverse(prop("ops", delta));
+
+  const result = [];
+
+  let lineAttributes = {};
+
+  const isLineConfig = equals("\n");
+  const isType = typeId =>
+    compose(
+      equals(typeId),
+      type
+    );
+  const isString = isType("string");
+  const isObject = isType("object");
+  const addItem = bind(result.unshift, result);
+
+  for (const op of reversedOps) {
     let attributes = prop("attributes", op);
-    let insert = prop("insert", op);
+    let data = prop("insert", op);
 
-    switch (typeof insert) {
-      case "string":
-        insert = replaceEl(
-          "\n",
-          <br />,
-          reject(isEmpty, split(/(\n)/, insert))
-        );
+    if (isString(data)) {
+      if (isLineConfig(data)) {
+        lineAttributes = attributes;
+        addItem(<br />);
+        continue;
+      }
 
-        if (prop("bold", attributes)) insert = <strong>{insert}</strong>;
+      data = replaceEl("\n", <br />, reject(isEmpty, split(/(\n)/, data)));
 
-        if (prop("underline", attributes)) insert = <u>{insert}</u>;
+      if (prop("bold", attributes)) data = <strong>{data}</strong>;
 
-        if (prop("italic", attributes)) insert = <em>{insert}</em>;
+      if (prop("underline", attributes)) data = <u>{data}</u>;
 
-        break;
-      case "object":
-        if (has("image", insert)) {
-          let imgAttributes = pick(["alt", "width", "height"], attributes);
-          return <img src={prop("image", insert)} {...imgAttributes} />;
-        }
-        break;
+      if (prop("italic", attributes)) data = <em>{data}</em>;
+
+      addItem(data);
+    } else if (isObject(data)) {
+      if (has("image", data)) {
+        let imgAttributes = pick(["alt", "width", "height"], attributes);
+
+        addItem(<img src={prop("image", data)} {...imgAttributes} />);
+      }
     }
+  }
 
-    return insert;
-  }, deltas);
+  return result;
 };
 
 const App = () => {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState();
 
   console.log(value);
   return (
@@ -171,7 +197,7 @@ const App = () => {
       <Toolbar />
       <QuillEditor onChange={setValue} formats={formats} />
       <div>
-        <Deltas deltas={value} />
+        <Deltas delta={value} />
       </div>
     </div>
   );
