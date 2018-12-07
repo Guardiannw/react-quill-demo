@@ -39,6 +39,31 @@ describe('<Delta />', () => {
         expect(children[0].children[0]).toEqual('Hello');
     });
 
+    it('should only render a list around the last line in a series of unformatted lines.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello\nMy\nName\nis\nlist'
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+
+        const children = TestRenderer.create(<Delta delta={delta}/>).root.children;
+
+        expect(children).toHaveLength(5);
+        expect(children[0]).toEqual('Hello');
+        expect(children[1]).toEqual('My');
+        expect(children[2]).toEqual('Name');
+        expect(children[3]).toEqual('is');
+        expect(children[4].type).toEqual('ol');
+    });
+
     it('should render `<span />` tags around text that has a `underline` attribute and specify the `textDecoration` property of the style attribute.', () => {
         const delta = {
             ops: [
@@ -93,6 +118,54 @@ describe('<Delta />', () => {
         expect(children[2]).toEqual('Timmy');
     });
 
+    it('should render a list that follows a video after the video.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: {
+                        video: 'src'
+                    }
+                },
+                {
+                    insert: '\nItem'
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children).toHaveLength(2);
+        expect(children[0].type).toEqual('iframe');
+        expect(children[1].type).toEqual('br');
+        expect(children[1].type).toEqual('ol');
+    });
+
+    it('should render a video embed for a delta that has an insert object with a key of `video`.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: {
+                        video: 'src'
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children).toHaveLength(1);
+        expect(children[0].type).toEqual('iframe');
+        expect(children[0].props).toEqual({
+            src: 'src',
+            allowFullScreen: true,
+            frameBorder: 0
+        });
+    });
+
     it('should render `<img />` tag with attributes [`alt`, `width`, `height`] when `insert` has an `image` property', () => {
         const delta = {
             ops: [
@@ -142,6 +215,62 @@ describe('<Delta />', () => {
         expect(children[1].type).toEqual('br');
         expect(children[2].type).toEqual('h1');
         expect(children[2].children[0]).toEqual('Timmy');
+    });
+
+    it('should still render contiguous header elements, even if they do not have any content.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: '\n',
+                    attributes: {
+                        header: 1
+                    }
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        header: 2
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children.length).toEqual(2);
+        expect(children[0].type).toEqual('h1');
+        expect(children[0].children[0]).toEqual('');
+        expect(children[1].type).toEqual('h2');
+        expect(children[1].children[0]).toEqual('');
+    });
+
+    it('should correctly render lists that follow headers.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello'
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        header: 1
+                    }
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children).toHaveLength(2);
+        expect(children[0].type).toEqual('h1');
+        expect(children[0].children[0]).toEqual('Hello');
+        expect(children[1].type).toEqual('ol');
+        expect(children[1].children[0].type).toEqual('li');
+        expect(children[1].children[0].children[0]).toEqual('');
     });
 
     it('should format the most recent line of characters with the appropriate level of indention if the `indent` attribute is set on the line.', () => {
@@ -387,6 +516,101 @@ describe('<Delta />', () => {
         expect(children[0].children[0].children[0]).toEqual('Hello');
     });
 
+    it('should render a list if the line attribute exists, even if there is no text.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+
+        expect(children).toHaveLength(1);
+        expect(children[0].type).toEqual('ol');
+        expect(children[0].children).toHaveLength(1);
+        expect(children[0].children[0].type).toEqual('li');
+        expect(children[0].children[0].children[0]).toEqual('');
+    });
+
+    it('should render a list with a single item, even if no content is provided and the following line is a different format.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'bullet'
+                    }
+                }
+            ]
+        };
+
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+
+        expect(children).toHaveLength(2);
+        expect(children[0].type).toEqual('ol');
+        expect(children[0].children[0].type).toEqual('li');
+        expect(children[0].children[0].children[0]).toEqual('');
+    });
+
+    it('should render elements within a list even if the last line doesn\'t contain any text.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello',
+                },
+                {
+                    insert: '\n\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+
+        expect(children).toHaveLength(1);
+        expect(children[0].type).toEqual('ol');
+        expect(children[0].children).toHaveLength(2);
+        expect(children[0].children[0].type).toEqual('li');
+        expect(children[0].children[0].children[0]).toEqual('Hello');
+        expect(children[0].children[1].type).toEqual('li');
+        expect(children[0].children[1].children[0]).toEqual('');
+    });
+
+    //TODO: change this to work for all header rows
+    it('should render a list item even if there are no text delta\'s.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+
+        expect(children).toHaveLength(1);
+        expect(children[0].type).toEqual('ol');
+        expect(children[0].children).toHaveLength(1);
+        expect(children[0].children[0].type).toEqual('li');
+        expect(children[0].children[0].children[0]).toEqual('');
+    });
+
     it('should render subsequent lines with the same value for the line attribute of `list` within the same parent list element.', () => {
         const delta = {
             ops: [
@@ -517,7 +741,6 @@ describe('<Delta />', () => {
         expect(children[0].type).toEqual('a');
         expect(children[0].props).toHaveProperty('href', 'http://google.com');
     });
-
 
     it('should allow inline formatting inside block formatting', () => {
         // TODO: Continue filling these out

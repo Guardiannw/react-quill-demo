@@ -108,7 +108,8 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
     let sequentialLineBuffer = [];
     let lineWrapper = identity;
   
-    const isLineConfig = equals("\n");
+    const isLineConfig = test(/^\n+$/);
+    const isDoubleLineConfig = test(/^\n{2}$/);
     const isType = typeId =>
       compose(
         equals(typeId),
@@ -126,6 +127,9 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
       }
       return result;
     }
+    const createAddOrBufferItem = () => isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
+
+
 
     for (const op of reversedOps) {
       let attributes = defaultTo({}, prop('attributes', op));
@@ -133,10 +137,13 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
   
       if (isString(data)) {
         if (isLineConfig(data)) {
-          const addOrBufferItem = isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
+          const oldLineWrapper = lineWrapper;
+          const addOrBufferItem = createAddOrBufferItem();
 
           if (hasBufferedItems())
             addOrBufferItem(lineWrapper(popBufferedItems()));
+          else if (isNotIdentity(lineWrapper) && isEmpty(sequentialLineComposition))
+            addOrBufferItem(lineWrapper(''));
 
           lineWrapper = identity;
 
@@ -145,21 +152,27 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
             const level = prop('header', attributes);
 
             lineWrapper = compose(wrap(`h${level}`), lineWrapper);
+            newSequentialLineComposition = [];
           }
 
           if (has('indent', attributes)) {
             const indention = prop('indent', attributes);
 
             lineWrapper = compose(wrap('div', {style: {marginLeft: `calc(${indentWidth} * ${indention})`}}), lineWrapper);
+            newSequentialLineComposition = [];
           }
 
           if (has('align', attributes)) {
             const alignment = prop('align', attributes);
 
             lineWrapper = compose(wrap('div', {style: {textAlign: alignment}}), lineWrapper);
+            newSequentialLineComposition = [];
           }
 
-          if (prop('blockquote', attributes)) lineWrapper = compose(wrap('blockquote'), lineWrapper);
+          if (prop('blockquote', attributes)) {
+            lineWrapper = compose(wrap('blockquote'), lineWrapper);
+            newSequentialLineComposition = [];
+          }
 
           if (has('list', attributes)) {
             const type = prop('list', attributes);
@@ -172,12 +185,17 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
             lineWrapper = compose(wrap('li'), lineWrapper);
           }
 
-          if (not(equals(sequentialLineComposition[0], newSequentialLineComposition[0])) && not(isNilOrEmpty(sequentialLineBuffer))) {
+          if (not(equals(sequentialLineComposition[0], newSequentialLineComposition[0])) && isNotEmpty(sequentialLineComposition)) {
             const sequentialLineWrapper = wrap(...sequentialLineComposition);
+            if (isEmpty(sequentialLineBuffer))
+              sequentialLineBuffer.push(oldLineWrapper(''));
             addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
             sequentialLineBuffer = [];
           }
           sequentialLineComposition = newSequentialLineComposition;
+
+          if (isDoubleLineConfig(data))
+            createAddOrBufferItem()(lineWrapper(''));
 
         } else if (isNotIdentity(lineWrapper)) {
           if (hasNewLine(data)) {
@@ -187,6 +205,8 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
 
             if (not(isNilOrEmpty(lastLine))) {
               const lastLineFormatted = formatInline(attributes, lastLine);
+
+              // Need to do sequential line wrapping up here.
 
               if (hasBufferedItems()) {
                 addOrBufferItem(lineWrapper(
@@ -212,10 +232,22 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
           addItem(formatInline(attributes, data));
       } else if (isObject(data)) {
           // TODO: Consider adding the buffered items here as well.
+        
+
+        if ((has('image', data) || has('video', data)) && not(isEmpty(sequentialLineComposition)) && not(isNilOrEmpty(sequentialLineBuffer))) {
+          const sequentialLineWrapper = wrap(...sequentialLineComposition);
+          addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
+          sequentialLineComposition = [];
+        }
+
         if (has('image', data)) {
           let imgAttributes = pick(['alt', 'width', 'height'], attributes);
   
           addItem(<img src={prop('image', data)} {...imgAttributes} />);
+        }
+
+        if (has('video', data)) {
+          addItem(<iframe src={prop('video', data)} frameBorder={0} allowFullScreen />);
         }
       }
     }
@@ -224,6 +256,8 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
 
     if (hasBufferedItems())
       addOrBufferItem(lineWrapper(popBufferedItems()));
+    else if (isNotIdentity(lineWrapper))
+      addOrBufferItem(lineWrapper(''));
 
     if (not(isEmpty(sequentialLineComposition)) && not(isNilOrEmpty(sequentialLineBuffer))) {
       const sequentialLineWrapper = wrap(...sequentialLineComposition);
