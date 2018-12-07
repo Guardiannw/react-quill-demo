@@ -203,43 +203,37 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
 
             const addOrBufferItem = isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
 
-            if (not(isNilOrEmpty(lastLine))) {
-              const lastLineFormatted = formatInline(attributes, lastLine);
+            const lastLineFormatted = formatInline(attributes, lastLine);
 
-              // Need to do sequential line wrapping up here.
+            if (hasBufferedItems()) {
+              addOrBufferItem(lineWrapper(
+                <>
+                  {lastLineFormatted}
+                  {popBufferedItems()}
+                </>
+              ));
+            }
+            else
+              addOrBufferItem(lineWrapper(lastLineFormatted));
 
-              if (hasBufferedItems()) {
-                addOrBufferItem(lineWrapper(
-                  <>
-                    {lastLineFormatted}
-                    {popBufferedItems()}
-                  </>
-                ));
-              }
-              else
-                addOrBufferItem(lineWrapper(lastLineFormatted));
+            if (isNotEmpty(sequentialLineComposition)) {
+              const sequentialLineWrapper = wrap(...sequentialLineComposition);
+              addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
+              sequentialLineComposition = [];
             }
 
             lineWrapper = identity;
 
-            addOrBufferItem(<br />);
+            addItem(<br />);
 
-            addOrBufferItem(formatInline(attributes, beginning));
+            addItem(formatInline(attributes, beginning));
           } else {
             storeItem(formatInline(attributes, data));
           }
         } else 
           addItem(formatInline(attributes, data));
       } else if (isObject(data)) {
-          // TODO: Consider adding the buffered items here as well.
-        
-
-        if ((has('image', data) || has('video', data)) && not(isEmpty(sequentialLineComposition)) && not(isNilOrEmpty(sequentialLineBuffer))) {
-          const sequentialLineWrapper = wrap(...sequentialLineComposition);
-          addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
-          sequentialLineComposition = [];
-        }
-
+        // TODO: Consider adding the buffered items here as well.
         if (has('image', data)) {
           let imgAttributes = pick(['alt', 'width', 'height'], attributes);
   

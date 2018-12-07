@@ -56,12 +56,16 @@ describe('<Delta />', () => {
 
         const children = TestRenderer.create(<Delta delta={delta}/>).root.children;
 
-        expect(children).toHaveLength(5);
+        expect(children).toHaveLength(9);
         expect(children[0]).toEqual('Hello');
-        expect(children[1]).toEqual('My');
-        expect(children[2]).toEqual('Name');
-        expect(children[3]).toEqual('is');
-        expect(children[4].type).toEqual('ol');
+        expect(children[1].type).toEqual('br');
+        expect(children[2]).toEqual('My');
+        expect(children[3].type).toEqual('br');
+        expect(children[4]).toEqual('Name');
+        expect(children[5].type).toEqual('br');
+        expect(children[6]).toEqual('is');
+        expect(children[7].type).toEqual('br');
+        expect(children[8].type).toEqual('ol');
     });
 
     it('should render `<span />` tags around text that has a `underline` attribute and specify the `textDecoration` property of the style attribute.', () => {
@@ -139,11 +143,34 @@ describe('<Delta />', () => {
         };
         const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
 
-        expect(children).toHaveLength(2);
+        expect(children).toHaveLength(3);
         expect(children[0].type).toEqual('iframe');
         expect(children[1].type).toEqual('br');
-        expect(children[1].type).toEqual('ol');
+        expect(children[2].type).toEqual('ol');
     });
+
+    it('should render a list item even if it has no content and it follows an unformatted line.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello\n'
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        list: 'ordered'
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children).toHaveLength(3);
+        expect(children[0]).toEqual('Hello');
+        expect(children[1].type).toEqual('br');
+        expect(children[2].type).toEqual('ol');
+        expect(children[2].children[0].type).toEqual('li');
+     });
 
     it('should render a video embed for a delta that has an insert object with a key of `video`.', () => {
         const delta = {
