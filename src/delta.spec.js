@@ -17,8 +17,6 @@ import { render } from 'react-testing-library';
 
 const substring = invoker(2, 'substring');
 
-// TODO: consider updating the tests to account for the fact that the delta list of ops 
-// always ends in a newline
 describe('<Delta />', () => {
     it('should render `<strong />` tags around text that has a `bold` attribute.', () => {
         const delta = {
@@ -28,6 +26,9 @@ describe('<Delta />', () => {
                     attributes: {
                         bold: true
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -36,6 +37,34 @@ describe('<Delta />', () => {
 
         expect(children.length).toEqual(1);
         expect(children[0].type).toEqual('strong');
+        expect(children[0].children[0]).toEqual('Hello');
+    });
+
+    it('should merge some inline attributes if possible.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello',
+                    attributes: {
+                        font: 'sans-serif',
+                        underline: true,
+                        size: 'huge',
+                        bold: true
+                    }
+                },
+                {
+                    insert: '\n'
+                }
+            ]
+        };
+
+        const children = TestRenderer.create(<Delta delta={delta} sizeMap={{huge: '12px'}}/>).root.children;
+
+        expect(children.length).toEqual(1);
+        expect(children[0].type).toEqual('strong');
+        expect(children[0].props.style.fontFamily).toEqual('sans-serif');
+        expect(children[0].props.style.fontSize).toEqual('12px');
+        expect(children[0].props.style.textDecoration).toEqual('underline');
         expect(children[0].children[0]).toEqual('Hello');
     });
 
@@ -76,6 +105,9 @@ describe('<Delta />', () => {
                     attributes: {
                         underline: true
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -95,6 +127,9 @@ describe('<Delta />', () => {
                     attributes: {
                         italic: true
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -109,8 +144,7 @@ describe('<Delta />', () => {
         const delta = {
             ops: [
                 {
-                    insert: 'Hello\nTimmy',
-                    attributes: {}
+                    insert: 'Hello\nTimmy\n'
                 }
             ]
         };
@@ -131,7 +165,7 @@ describe('<Delta />', () => {
                     }
                 },
                 {
-                    insert: '\nItem'
+                    insert: 'Item'
                 },
                 {
                     insert: '\n',
@@ -143,10 +177,9 @@ describe('<Delta />', () => {
         };
         const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
 
-        expect(children).toHaveLength(3);
+        expect(children).toHaveLength(2);
         expect(children[0].type).toEqual('iframe');
-        expect(children[1].type).toEqual('br');
-        expect(children[2].type).toEqual('ol');
+        expect(children[1].type).toEqual('ol');
     });
 
     it('should render a list item even if it has no content and it follows an unformatted line.', () => {
@@ -179,6 +212,9 @@ describe('<Delta />', () => {
                     insert: {
                         video: 'src'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -189,8 +225,34 @@ describe('<Delta />', () => {
         expect(children[0].props).toEqual({
             src: 'src',
             allowFullScreen: true,
-            frameBorder: 0
+            frameBorder: 0,
+            style: {
+                display: 'block'
+            }
         });
+    });
+
+    it('should apply alignment attributes to block elements.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: {
+                        video: 'src'
+                    },
+                    attributes: {
+                        align: 'right'
+                    }
+                },
+                {
+                    insert: '\n'
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta}/>).root.children);
+
+        expect(children).toHaveLength(1);
+        expect(children[0].type).toEqual('iframe');
+        expect(children[0].props.style.margin).toEqual('0 0 0 auto');
     });
 
     it('should render `<img />` tag with attributes [`alt`, `width`, `height`] when `insert` has an `image` property', () => {
@@ -205,6 +267,9 @@ describe('<Delta />', () => {
                         height: '50',
                         width: '50'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -216,7 +281,10 @@ describe('<Delta />', () => {
             src: 'src',
             height: '50',
             width: '50',
-            alt: 'alt'
+            alt: 'alt',
+            style: {
+                display: 'block'
+            }
         });
     });
 
@@ -265,7 +333,7 @@ describe('<Delta />', () => {
 
         expect(children.length).toEqual(2);
         expect(children[0].type).toEqual('h1');
-        expect(children[0].children[0]).toEqual('');
+        expect(children[0].children[0] /*?*/).toEqual('');
         expect(children[1].type).toEqual('h2');
         expect(children[1].children[0]).toEqual('');
     });
@@ -337,7 +405,7 @@ describe('<Delta />', () => {
                 {
                     insert: '\n',
                     attributes: {
-                        align: "right"
+                        align: 'right'
                     }
                 }
             ]
@@ -384,6 +452,9 @@ describe('<Delta />', () => {
                     attributes: {
                         script: 'super'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -402,6 +473,9 @@ describe('<Delta />', () => {
                     attributes: {
                         script: 'sub'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -420,6 +494,9 @@ describe('<Delta />', () => {
                     attributes: {
                         color: '#FFEEFF'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -439,6 +516,9 @@ describe('<Delta />', () => {
                     attributes: {
                         link: 'http://google.com'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -458,6 +538,9 @@ describe('<Delta />', () => {
                     attributes: {
                         font: 'ariel'
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -476,14 +559,17 @@ describe('<Delta />', () => {
             huge: '40px'
         };
 
-        for (const size in keys(sizeMap)) {
+        for (const size of keys(sizeMap)) {
             const delta = {
                 ops: [
                     {
                         insert: 'Hello',
                         attributes: {
-                            size: sizeMap[size]
+                            size
                         }
+                    },
+                    {
+                        insert: '\n'
                     }
                 ]
             };
@@ -582,7 +668,7 @@ describe('<Delta />', () => {
             ]
         };
 
-        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children); //?
 
         expect(children).toHaveLength(2);
         expect(children[0].type).toEqual('ol');
@@ -678,10 +764,7 @@ describe('<Delta />', () => {
                     }
                 },
                 {
-                    insert: 'Harry'
-                },
-                {
-                    insert: '\n'
+                    insert: 'Harry\n'
                 }
             ]
         };
@@ -725,10 +808,10 @@ describe('<Delta />', () => {
                     }
                 },
                 {
+                    insert: "\n",
                     attributes: {
                         header: 1
-                    },
-                    insert: "\n"
+                    }
                 }
             ]
         };
@@ -757,6 +840,9 @@ describe('<Delta />', () => {
                         link: 'http://google.com',
                         bold: true
                     }
+                },
+                {
+                    insert: '\n'
                 }
             ]
         };
@@ -830,5 +916,29 @@ describe('<Delta />', () => {
                 expect(blockChildren[1].children[0]).toEqual('ell');
             }
         }
+    });
+
+    it('should allow 2 different line attributes.', () => {
+        const delta = {
+            ops: [
+                {
+                    insert: 'Hello',
+                    attributes: {}
+                },
+                {
+                    insert: '\n',
+                    attributes: {
+                        align: 'right',
+                        header: 1
+                    }
+                }
+            ]
+        };
+        const children = flatten(TestRenderer.create(<Delta delta={delta} />).root.children);
+
+        expect(children.length).toEqual(1);
+        expect(children[0].type).toEqual('h1');
+        expect(children[0].children[0]).toEqual('Hello');
+        expect(children[0].props.style.textAlign).toEqual('right');
     });
 });

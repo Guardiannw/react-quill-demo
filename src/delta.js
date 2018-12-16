@@ -1,11 +1,11 @@
 import React, { Fragment } from "react";
 import {
     compose,
+    keys,
+    last,
     defaultTo,
+    head,
     path,
-    type,
-    reverse,
-    not,
     __,
     reject,
     always,
@@ -20,36 +20,31 @@ import {
     invoker,
     reduce,
     toPairs,
+    sortWith,
     over,
     mergeDeepLeft,
-    when,
-    or,
-    useWith,
     has,
     split,
     equals,
+    ascend,
     complement,
-    curryN,
+    indexOf,
     test,
     ifElse,
-    bind,
-    either,
     lensIndex
   } from "ramda";
 
-const isNilOrEmpty = either(isNil, isEmpty);
+const isNotNil = complement(isNil);
 const isNotEmpty = complement(isEmpty);
-const replaceArr = (cond, mapping, arr) => map(when(cond, mapping), arr);
-const replaceEl = useWith(replaceArr, [equals, always, identity]);
-const hasNewLine = test(/\n/);
-const splitAtLastLine = split(/\n(?!.*\n)/);
-const isNotIdentity = compose(not, equals(identity));
 const substring = invoker(2, 'substring');
 const wrap = (Component, props) => (children) => (<Component {...props}>{children}</Component>);
 const lastLens = lensIndex(-1);
 const composeEm = ifElse(isEmpty, always(identity), apply(compose));
 
-const formatLine = curryN(3, (config, attributes, text) => {
+const lineAttributePriorityMap = ['script', 'link', 'bold', 'italic', 'underline', 'font', 'size', 'color'];
+const sortLineAttributesByPriority = sortWith([ascend(compose(indexOf(__, lineAttributePriorityMap), head))]);
+
+const formatLine = (config) => ({attributes, data = ''}) => {
   const composition = reduce((list, [key, value]) => {
     switch (key) {
       case 'bold':
@@ -74,7 +69,7 @@ const formatLine = curryN(3, (config, attributes, text) => {
           return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {color: value}})), list);
         return append(['span', {style: {color: value}}], list);
       case 'size':
-        const size = path([value, 'sizeMap'], config);
+        const size = path(['sizeMap', value], config);
 
         if (isNotEmpty(list))
           return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontSize: size}})), list);
@@ -85,178 +80,198 @@ const formatLine = curryN(3, (config, attributes, text) => {
         if (isNotEmpty(list))
           return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontFamily: value}})), list);
         return append(['span', {style: {fontFamily: value}}], list);
+      default:
+        return list;
     }
-  }, [], toPairs(attributes));
+  }, [], sortLineAttributesByPriority(toPairs(attributes))/*?*/);
 
   const wrapper = composeEm(map(apply(wrap), composition));
 
-  return wrapper(replaceEl('\n', <br />, reject(isEmpty, split(/(\n)/, text))));
-});
+  if (data === '\n')
+    return wrapper(<br />);
+
+  if (typeof data === 'object') {
+    const props = {
+      style: {
+        display: 'block'
+      }
+    };
+    if (has('align', attributes))
+      switch (prop('align', attributes)) {
+        case 'center':
+          props.style.margin = '0 auto';
+          break;
+        case 'left':
+          props.style.margin = '0 auto 0 0';
+          break;
+        case 'right':
+          props.style.margin = '0 0 0 auto';
+          break;
+      }
+    switch (head(keys(data))) {
+      case 'video':
+        return (
+          <iframe src={data.video} frameBorder={0} allowFullScreen {...props}/>
+        );
+      case 'image':
+        return (
+          <img src={prop('image', data)} {...pick(['alt', 'width', 'height'], attributes)} {...props}/>
+        );
+    }
+  }
+
+  return wrapper(data);
+};
 
 export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
-    if (isNilOrEmpty(delta)) return null;
+  // Regroup
+  const fineGroups = [];
+  const ops = defaultTo([], prop('ops', delta));
+  for(const op of ops) {
+    const attributes = defaultTo({}, prop('attributes', op));
+    const data = prop('insert', op);
 
-    const formatInline = formatLine({sizeMap, indentWidth});
-  
-    let reversedOps = reverse(prop("ops", delta));
+    if (test(/\n/, data)) {
+      const segments = reject(isEmpty, split(/(\n)/, data));
+      for(const segment of segments) {
+        fineGroups.push({
+          data: segment,
+          attributes
+        });
+      }
+    } else
+      fineGroups.push({
+        data,
+        attributes
+      });
+  }
 
+  //TODO: try to refactor this a bit
+  const lastFineGroup = last(fineGroups);
+  if (isNotNil(lastFineGroup) && head(prop('data', lastFineGroup)) == '\n' && isEmpty(prop('attributes', lastFineGroup)))
+    fineGroups.pop();
+
+  const popAll = (arr) => {
     const result = [];
-    const lineBuffer = [];
-  
-    let newSequentialLineComposition = [];
-    let sequentialLineComposition = [];
-    let sequentialLineBuffer = [];
-    let lineWrapper = identity;
-  
-    const isLineConfig = test(/^\n+$/);
-    const isDoubleLineConfig = test(/^\n{2}$/);
-    const isType = typeId =>
-      compose(
-        equals(typeId),
-        type
-      );
-    const isString = isType("String");
-    const isObject = isType("Object");
-    const addItem = bind(result.unshift, result);
-    const storeItem = bind(lineBuffer.push, lineBuffer);
-    const hasBufferedItems = () => not(isEmpty(lineBuffer));
-    const popBufferedItems = () => {
-      const result = [];
-      while(lineBuffer.length) {
-        result.push(lineBuffer.pop());
-      }
-      return result;
-    }
-    const createAddOrBufferItem = () => isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
-
-
-
-    for (const op of reversedOps) {
-      let attributes = defaultTo({}, prop('attributes', op));
-      let data = prop('insert', op);
-  
-      if (isString(data)) {
-        if (isLineConfig(data)) {
-          const oldLineWrapper = lineWrapper;
-          const addOrBufferItem = createAddOrBufferItem();
-
-          if (hasBufferedItems())
-            addOrBufferItem(lineWrapper(popBufferedItems()));
-          else if (isNotIdentity(lineWrapper) && isEmpty(sequentialLineComposition))
-            addOrBufferItem(lineWrapper(''));
-
-          lineWrapper = identity;
-
-          // TODO: change these so that the styles are applied on the same block element; only create a new div if no block exists.
-          if (has('header', attributes)) {
-            const level = prop('header', attributes);
-
-            lineWrapper = compose(wrap(`h${level}`), lineWrapper);
-            newSequentialLineComposition = [];
-          }
-
-          if (has('indent', attributes)) {
-            const indention = prop('indent', attributes);
-
-            lineWrapper = compose(wrap('div', {style: {marginLeft: `calc(${indentWidth} * ${indention})`}}), lineWrapper);
-            newSequentialLineComposition = [];
-          }
-
-          if (has('align', attributes)) {
-            const alignment = prop('align', attributes);
-
-            lineWrapper = compose(wrap('div', {style: {textAlign: alignment}}), lineWrapper);
-            newSequentialLineComposition = [];
-          }
-
-          if (prop('blockquote', attributes)) {
-            lineWrapper = compose(wrap('blockquote'), lineWrapper);
-            newSequentialLineComposition = [];
-          }
-
-          if (has('list', attributes)) {
-            const type = prop('list', attributes);
-
-            if (type === 'ordered')
-              newSequentialLineComposition = ['ol', {}];
-            else if (type === 'bullet')
-              newSequentialLineComposition = ['ul', {}];
-
-            lineWrapper = compose(wrap('li'), lineWrapper);
-          }
-
-          if (not(equals(sequentialLineComposition[0], newSequentialLineComposition[0])) && isNotEmpty(sequentialLineComposition)) {
-            const sequentialLineWrapper = wrap(...sequentialLineComposition);
-            if (isEmpty(sequentialLineBuffer))
-              sequentialLineBuffer.push(oldLineWrapper(''));
-            addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
-            sequentialLineBuffer = [];
-          }
-          sequentialLineComposition = newSequentialLineComposition;
-
-          if (isDoubleLineConfig(data))
-            createAddOrBufferItem()(lineWrapper(''));
-
-        } else if (isNotIdentity(lineWrapper)) {
-          if (hasNewLine(data)) {
-            const [beginning, lastLine] = splitAtLastLine(data);
-
-            const addOrBufferItem = isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
-
-            const lastLineFormatted = formatInline(attributes, lastLine);
-
-            if (hasBufferedItems()) {
-              addOrBufferItem(lineWrapper(
-                <>
-                  {lastLineFormatted}
-                  {popBufferedItems()}
-                </>
-              ));
-            }
-            else
-              addOrBufferItem(lineWrapper(lastLineFormatted));
-
-            if (isNotEmpty(sequentialLineComposition)) {
-              const sequentialLineWrapper = wrap(...sequentialLineComposition);
-              addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
-              sequentialLineComposition = [];
-            }
-
-            lineWrapper = identity;
-
-            addItem(<br />);
-
-            addItem(formatInline(attributes, beginning));
-          } else {
-            storeItem(formatInline(attributes, data));
-          }
-        } else 
-          addItem(formatInline(attributes, data));
-      } else if (isObject(data)) {
-        // TODO: Consider adding the buffered items here as well.
-        if (has('image', data)) {
-          let imgAttributes = pick(['alt', 'width', 'height'], attributes);
-  
-          addItem(<img src={prop('image', data)} {...imgAttributes} />);
-        }
-
-        if (has('video', data)) {
-          addItem(<iframe src={prop('video', data)} frameBorder={0} allowFullScreen />);
-        }
-      }
-    }
-
-    const addOrBufferItem = isEmpty(sequentialLineComposition) ? addItem : bind(sequentialLineBuffer.push, sequentialLineBuffer);
-
-    if (hasBufferedItems())
-      addOrBufferItem(lineWrapper(popBufferedItems()));
-    else if (isNotIdentity(lineWrapper))
-      addOrBufferItem(lineWrapper(''));
-
-    if (not(isEmpty(sequentialLineComposition)) && not(isNilOrEmpty(sequentialLineBuffer))) {
-      const sequentialLineWrapper = wrap(...sequentialLineComposition);
-      addItem(sequentialLineWrapper(reverse(sequentialLineBuffer)));
-    }
-  
+    while(arr.length)
+      result.push(arr.shift());
     return result;
+  }
+
+  const lines = [];
+  const lineQueue = [];
+  for(const group of fineGroups) {
+    const data = prop('data', group);
+    const attributes = prop('attributes', group);
+
+    if(test(/^\n$/, data) && !isEmpty(attributes)) {
+      lines.push({
+        data: isEmpty(lineQueue) ? [''] : popAll(lineQueue),
+        attributes
+      });
+    } else if (test(/^\n$/, data))
+      lines.push({
+        data: [...popAll(lineQueue), group],
+        attributes
+      });
+    else if (typeof data === 'object')
+      lines.push({
+        data: [group],
+        attributes: {}
+      });
+    else
+      lineQueue.push(group);
+  }
+  if (lineQueue.length)
+    lines.push({
+      data: popAll(lineQueue),
+      attributes: {}
+    });
+
+  const lineGroups = [];
+  const groupQueue = [];
+  let newListType;
+  let previousListType;
+  for (const line of lines) {
+    const attributes = prop('attributes', line);
+    newListType = prop('list', attributes);
+
+    if(isNotNil(newListType) && (isNil(previousListType) || equals(previousListType, newListType))) {
+        groupQueue.push(line);
+    } else if (isNotNil(previousListType)) {
+      lineGroups.push({
+        data: popAll(groupQueue),
+        attributes: {
+          list: previousListType
+        }
+      });
+      if (isNotNil(newListType))
+        groupQueue.push(line);
+      else
+        lineGroups.push({
+          data: [line],
+          attributes
+        });
+    } else
+      lineGroups.push({
+        data: [line],
+        attributes
+      });
+    
+    previousListType = newListType;
+  }
+  if (isNotEmpty(groupQueue))
+    lineGroups.push({
+      data: popAll(groupQueue),
+      attributes: {
+        list: newListType
+      }
+    });
+
+  const formatLineGroup = (config) => ({data, attributes}) => {
+    const formattedLines = map(formatLines(config), data);
+
+    switch (prop('list', attributes)) {
+      case 'ordered':
+        return (
+          <ol>{formattedLines}</ol>
+        );
+      case 'bullet':
+        return (
+          <ul>{formattedLines}</ul>
+        );
+      default:
+          return formattedLines;
+    }
   };
+
+  const formatLines = (config) => ({data, attributes}) => {
+    const formattedLine = map(formatLine(config), data);
+    let props = {};
+
+    if (has('indent', attributes))
+      props = mergeDeepLeft({style: {marginLeft: `calc(${config.indentWidth} * ${attributes.indent})`}}, props);
+
+    if (has('align', attributes))
+      props = mergeDeepLeft({style: {textAlign: attributes.align}}, props);
+
+    if (has('header', attributes))
+      return React.createElement(`h${attributes.header}`, props, formattedLine);
+
+    if (has('blockquote', attributes))
+      return <blockquote {...props}>{formattedLine}</blockquote>
+
+    if (has('list', attributes))
+      return <li {...props}>{formattedLine}</li>;
+
+    if (has('indent', attributes))
+      return <div {...props}>{formattedLine}</div>
+
+    if (has('align', attributes))
+      return <div {...props}>{formattedLine}</div>
+
+    return formattedLine;
+  };
+
+  return map(formatLineGroup({sizeMap, indentWidth}), lineGroups);
+};
