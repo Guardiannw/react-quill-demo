@@ -1,15 +1,37 @@
-import React, { memo, useState, useEffect, useRef, useImperativeMethods, forwardRef, useCallback } from "react";
+import React, { memo, useMemo, useState, useEffect, useRef, useImperativeMethods, forwardRef, useCallback } from "react";
 import Quill from "quill";
 import {
   isNil,
+  toPairs,
+  has,
+  prop,
+  compose,
+  path,
+  reduce,
   keys,
+  values,
   not,
+  map,
   isEmpty,
   complement,
+  pickAll,
   or
 } from "ramda";
 
 // Material UI
+import ToggleButton from "@material-ui/lab/ToggleButton";
+import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
+import InputLabel from '@material-ui/core/InputLabel';
+import MenuItem from '@material-ui/core/MenuItem';
+import FormControl from '@material-ui/core/FormControl';
+import Select from '@material-ui/core/Select';
+
+// Material UI Icons
+import FormatQuoteIcon from "@material-ui/icons/FormatQuote";
+import FormatListNumberedIcon from "@material-ui/icons/FormatListNumbered";
+import FormatIndentIncreaseIcon from "@material-ui/icons/FormatIndentIncrease";
+import FormatIndentDecreaseIcon from "@material-ui/icons/FormatIndentDecrease";
+import FormatListBulletedIcon from "@material-ui/icons/FormatListBulleted";
 import FormatAlignLeftIcon from "@material-ui/icons/FormatAlignLeft";
 import FormatAlignCenterIcon from "@material-ui/icons/FormatAlignCenter";
 import FormatAlignRightIcon from "@material-ui/icons/FormatAlignRight";
@@ -17,15 +39,9 @@ import FormatAlignJustifyIcon from "@material-ui/icons/FormatAlignJustify";
 import FormatBoldIcon from '@material-ui/icons/FormatBold';
 import FormatItalicIcon from '@material-ui/icons/FormatItalic';
 import FormatUnderlinedIcon from '@material-ui/icons/FormatUnderlined';
-import FormatColorFillIcon from '@material-ui/icons/FormatColorFill';
+import FormatColorTextIcon from '@material-ui/icons/FormatColorText';
 import ArrowDropDownIcon from '@material-ui/icons/ArrowDropDown';
-import ToggleButton from "@material-ui/lab/ToggleButton";
-import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
-import List from '@material-ui/core/List';
-import ListItem from '@material-ui/core/ListItem';
-import ListItemText from '@material-ui/core/ListItemText';
-import Menu from '@material-ui/core/Menu';
-import MenuItem from '@material-ui/core/MenuItem';
+
 import { SketchPicker } from 'react-color';
 
 import { useDelta } from "./useDelta";
@@ -35,30 +51,130 @@ import "./styles.css";
 
 const isNotNil = complement(isNil);
 
-const Toolbar = memo(({quill}) => {
-  // TODO: Consider refactoring this appropriately.
-  const alignment = quill && quill.getFormat().align;
-  const formats = (quill && keys(quill.getFormat())) || [];
-  const color = (quill && quill.getFormat().color) || '#000';
-  const header = quill && quill.getFormat().header;
+const HeaderMenu = ({onChange, header = ""}) => {
+  const onHeaderChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
+
+  return (
+    <FormControl>
+      <InputLabel htmlFor="toolbar-header-select">Header</InputLabel>
+      <Select
+        value={header}
+        onChange={onHeaderChange}
+        id="toolbar-header-select"
+        data-cy="toolbar-header-select">
+        <MenuItem value="">None</MenuItem>
+        <MenuItem value="1">Header 1</MenuItem>
+        <MenuItem value="2">Header 2</MenuItem>
+        <MenuItem value="3">Header 3</MenuItem>
+        <MenuItem value="4">Header 4</MenuItem>
+        <MenuItem value="5">Header 5</MenuItem>
+        <MenuItem value="6">Header 6</MenuItem>
+      </Select>
+    </FormControl>
+  );
+};
+
+
+const FontMenu = ({onChange, fonts = [], font = ""}) => {
+  const onFontChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
+
+  const menuItems = useMemo(() => {
+    return map(([label, font]) => (
+      <MenuItem key={font} value={font}>{label}</MenuItem>
+    ), toPairs(fonts));
+  }, [fonts]);
+
+  return (
+    <FormControl>
+      <InputLabel htmlFor="toolbar-font-select">Font</InputLabel>
+      <Select
+        value={font}
+        onChange={onFontChange}
+        id="toolbar-font-select"
+        data-cy="toolbar-font-select">
+          <MenuItem value="">None</MenuItem>
+          {menuItems}
+      </Select>
+    </FormControl>
+  );
+};
+
+const Toolbar = memo(({quill, fonts}) => {
+  const getAttributes = useCallback(() => quill ? quill.getFormat() : {}, [quill]);
+
+  const attributes = getAttributes();
+
   const onChange = useCallback((event, alignment) => {
     quill.format('align', alignment, 'user');
   }, [quill]);
+
+  const formats = useMemo(() => keys(attributes), [attributes]);
+
   const handleFormatsChange = useCallback((event) => {
-    const format = event.currentTarget.value;
-    const previousValue = isNotNil(quill.getFormat()[format]);
+    const format = path(['currentTarget', 'value'], event);
+    const attributes = getAttributes();
+    const previousValue = has(format, attributes) ? prop(format, attributes) : false;
     quill.format(format, not(previousValue), 'user');
   }, [quill]);
+
   const onColorChange = useCallback((color) => {
     quill.format('color', color && color.hex, 'user');
   }, [quill]);
 
-  const onHeaderChange = useCallback((value) => () => {
+  const onHeaderChange = useCallback((value) => {
     quill.format('header', value);
   }, [quill]);
 
+  const onFontChange = useCallback((value) => {
+    quill.format('font', value);
+  }, [quill]);
+
+  const alignment = attributes.align;
+  const color = attributes.color || '#000';
+  const header = attributes.header;
+  const font = attributes.font;
+  const block = useMemo(() => {
+    if (attributes.list === 'ordered')
+      return 'list-ordered';
+    if (attributes.list === 'bullet')
+      return 'list-unordered';
+  }, [attributes.list]);
+
+  const onBlocksChange = useCallback((event) => {
+    const key = path(['currentTarget', 'value'], event);
+    const attributes = getAttributes();
+    switch (key) {
+      case 'list-ordered':
+        if (attributes.list === 'ordered')
+          quill.format('list', false);
+        else
+          quill.format('list', 'ordered');
+        break;
+      case 'list-unordered':
+        if (attributes.list === 'bullet')
+          quill.format('list', false);
+        else
+          quill.format('list', 'bullet');
+        break;
+      case 'indent-decrease':
+        if (attributes.indent == null || attributes.indent === 1)
+          quill.format('indent', false);
+        else
+          quill.format('indent', attributes.indent - 1);
+        break;
+      case 'indent-increase':
+        if (attributes.indent == null)
+          quill.format('indent', 1);
+        else if (attributes.indent >= 7)
+          quill.format('indent', 8);
+        else
+          quill.format('indent', attributes.indent + 1);
+        break;
+    }
+  }, [quill]);
+
   return (
-    <div id="toolbar">
+    <div data-cy="toolbar">
       <ToggleButtonGroup value={alignment} exclusive onChange={onChange}>
         <ToggleButton value={null}>
           <FormatAlignLeftIcon />
@@ -84,44 +200,32 @@ const Toolbar = memo(({quill}) => {
           <FormatUnderlinedIcon />
         </ToggleButton>
         <ToggleButton value="color">
-          <FormatColorFillIcon />
+          <FormatColorTextIcon />
           <ArrowDropDownIcon />
+        </ToggleButton>
+        <ToggleButton value="blockquote">
+          <FormatQuoteIcon />
+        </ToggleButton>
+      </ToggleButtonGroup>
+      <ToggleButtonGroup value={block} exclusive onChange={onBlocksChange}>
+        <ToggleButton value="list-ordered">
+          <FormatListNumberedIcon />
+        </ToggleButton>
+        <ToggleButton value="list-unordered">
+          <FormatListBulletedIcon />
+        </ToggleButton>
+        <ToggleButton value="indent-decrease">
+          <FormatIndentDecreaseIcon />
+        </ToggleButton>
+        <ToggleButton value="indent-increase">
+          <FormatIndentIncreaseIcon />
         </ToggleButton>
       </ToggleButtonGroup>
       {formats.includes('color') && (
         <SketchPicker color={color} onChange={onColorChange} />
       )}
-      {/* <List>
-        <ListItem button>
-          <ListItemText
-            primary="Header"
-            secondary={`H${header}`}
-            />
-        </ListItem>
-      </List>
-      <Menu open>
-        {
-          [
-            'Header 1',
-            'Header 2',
-            'Header 3',
-            'Header 4',
-            'Header 5',
-            'Header 6',
-            'Header 7',
-            'Header 8',
-          ].map((option, index) => (
-            <MenuItem
-              key={option}
-              disabled={index === 0}
-              selected={index === header}
-              onClick={onHeaderChange}
-            >
-              {option}
-            </MenuItem>
-          ))
-        }
-      </Menu> */}
+      <HeaderMenu onChange={onHeaderChange} header={header}/>
+      <FontMenu onChange={onFontChange} fonts={fonts} font={font} />
     </div>
   );
 });
@@ -152,47 +256,59 @@ const formats = [
   'align'
 ];
 
-const QuillEditor = forwardRef((props, ref) => {
+const QuillEditor = (props) => {
   const quillRef = useRef(null);
   const quillEditor = useRef(null);
+  const fonts = useMemo(() => props.fonts || [], []);
 
-  // Forward the quillRef to the parent component
-  useImperativeMethods(ref, () => quillEditor.current);
+  useMemo(() => {
+    const FontAttributor = Quill.import('attributors/class/font');
+
+    FontAttributor.whitelist = fonts;
+
+    Quill.register(FontAttributor, true);
+  }, []);
 
   useEffect(
     () => {
-      if (quillRef.current !== null) {
-        quillEditor.current = new Quill(quillRef.current, {
-          theme: 'snow',
-          modules: {
-            toolbar: [
-              ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
-              ['blockquote', 'code-block'],
-            
-              [{ 'header': 1 }, { 'header': 2 }],               // custom button values
-              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-              [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
-              [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
-              [{ 'direction': 'rtl' }],                         // text direction
-            
-              [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
-              [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-            
-              [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
-              [{ 'font': [] }],
-              [{ 'align': [] }],
-              ['link'],
-              ['video'],
-            
-              ['clean']                                         // remove formatting button
-            ]
-          },
-          formats: props.formats
-        });
-      }
+      quillEditor.current = new Quill(quillRef.current, {
+        theme: 'snow',
+        modules: {
+          toolbar: [
+            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+            ['blockquote', 'code-block'],
+          
+            [{ 'header': 1 }, { 'header': 2 }],               // custom button values
+            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+            [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
+            [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
+            [{ 'direction': 'rtl' }],                         // text direction
+          
+            [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
+            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+          
+            [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
+            [{ 'font': [] }],
+            [{ 'align': [] }],
+            ['link'],
+            ['video'],
+          
+            ['clean']                                         // remove formatting button
+          ]
+        },
+        formats: props.formats
+      });
+
+      if (props.onEditorInit)
+        props.onEditorInit(quillEditor.current);
     },
     [quillRef]
   );
+
+  useEffect(() => {
+    if (quillEditor.current && props.onEditorInit)
+      props.onEditorInit(quillEditor.current);
+  }, [quillEditor.current, props.onEditorInit]);
 
   useEffect(
     () => {
@@ -237,21 +353,34 @@ const QuillEditor = forwardRef((props, ref) => {
     [quillEditor.current, props.onSelectionChange]
   );
 
-  return <div ref={quillRef} />;
-});
+  return (<>
+      <style>
+        {fonts.map((font) => `
+          .ql-font-${font} {
+            font-family: ${font};
+          }
+        `).join('')}
+      </style>
+    <div ref={quillRef} />
+  </>);
+};
 
 export const App = () => {
-  const quill = useRef();
+  const [quill, setQuill] = useState(null);
   const [quillSelection, setQuillSelection] = useState([null, null]);
   const [value, setValue] = useState();
+  const fonts = useMemo(() => ({
+    "Verdana": "verdana",
+    "Ariel": "ariel"
+  }), []);
+  const fontValues = useMemo(() => values(fonts), [fonts]);
 
   const { Delta } = useDelta();
 
-  console.log(value);
   return (
     <div className="App">
-      <Toolbar quill={quill.current} selection={quillSelection} valueChange={value}/>
-      <QuillEditor ref={quill} onChange={setValue} formats={formats} />
+      <Toolbar quill={quill} fonts={fonts} selection={quillSelection} valueChange={value}/>
+      <QuillEditor fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
       <div>
           <Delta delta={value} sizeMap={{
             small: '14px',
