@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState, useEffect, useRef, useImperativeMethods, forwardRef, useCallback } from "react";
+import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Quill from "quill";
 import {
   isNil,
@@ -7,15 +7,11 @@ import {
   prop,
   compose,
   path,
-  reduce,
   keys,
   values,
   not,
   map,
-  isEmpty,
-  complement,
-  pickAll,
-  or
+  complement
 } from "ramda";
 
 // Material UI
@@ -42,6 +38,12 @@ import FormatUnderlinedIcon from '@material-ui/icons/FormatUnderlined';
 import FormatColorTextIcon from '@material-ui/icons/FormatColorText';
 import ArrowDropDownIcon from '@material-ui/icons/ArrowDropDown';
 
+// Custom Icons
+import {
+  FormatSubscriptIcon,
+  FormatSuperscriptIcon
+} from './icons';
+
 import { SketchPicker } from 'react-color';
 
 import { useDelta } from "./useDelta";
@@ -49,7 +51,25 @@ import { useDelta } from "./useDelta";
 import "quill/dist/quill.snow.css";
 import "./styles.css";
 
-const isNotNil = complement(isNil);
+const SizeMenu = ({onChange, size = ""}) => {
+  const onSizeChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
+
+  return (
+    <FormControl>
+      <InputLabel htmlFor="toolbar-size-select">Size</InputLabel>
+      <Select
+        value={size}
+        onChange={onSizeChange}
+        id="toolbar-size-select"
+        data-cy="toolbar-size-select">
+        <MenuItem value="">Normal</MenuItem>
+        <MenuItem value="small">Small</MenuItem>
+        <MenuItem value="large">Large</MenuItem>
+        <MenuItem value="huge">Huge</MenuItem>
+      </Select>
+    </FormControl>
+  );
+};
 
 const HeaderMenu = ({onChange, header = ""}) => {
   const onHeaderChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
@@ -73,7 +93,6 @@ const HeaderMenu = ({onChange, header = ""}) => {
     </FormControl>
   );
 };
-
 
 const FontMenu = ({onChange, fonts = [], font = ""}) => {
   const onFontChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
@@ -99,7 +118,7 @@ const FontMenu = ({onChange, fonts = [], font = ""}) => {
   );
 };
 
-const Toolbar = memo(({quill, fonts}) => {
+const Toolbar = memo(({quill, fonts, sizeMap}) => {
   const getAttributes = useCallback(() => quill ? quill.getFormat() : {}, [quill]);
 
   const attributes = getAttributes();
@@ -129,10 +148,22 @@ const Toolbar = memo(({quill, fonts}) => {
     quill.format('font', value);
   }, [quill]);
 
+  const onSizeChange = useCallback((value) => {
+    quill.format('size', value);
+  }, [quill]);
+
+  const onScriptChange = useCallback((event) => {
+    const format = path(['currentTarget', 'value'], event);
+    const previousValue = getAttributes().script;
+    quill.format('script', previousValue === format ? false : format);
+  }, [quill]);
+
+  const script = attributes.script;
   const alignment = attributes.align;
   const color = attributes.color || '#000';
   const header = attributes.header;
   const font = attributes.font;
+  const size = attributes.size;
   const block = useMemo(() => {
     if (attributes.list === 'ordered')
       return 'list-ordered';
@@ -207,6 +238,14 @@ const Toolbar = memo(({quill, fonts}) => {
           <FormatQuoteIcon />
         </ToggleButton>
       </ToggleButtonGroup>
+      <ToggleButtonGroup value={script} exclusive onChange={onScriptChange}>
+        <ToggleButton value="super">
+          <FormatSuperscriptIcon />
+        </ToggleButton>
+        <ToggleButton value="sub">
+          <FormatSubscriptIcon />
+        </ToggleButton>
+      </ToggleButtonGroup>
       <ToggleButtonGroup value={block} exclusive onChange={onBlocksChange}>
         <ToggleButton value="list-ordered">
           <FormatListNumberedIcon />
@@ -226,6 +265,7 @@ const Toolbar = memo(({quill, fonts}) => {
       )}
       <HeaderMenu onChange={onHeaderChange} header={header}/>
       <FontMenu onChange={onFontChange} fonts={fonts} font={font} />
+      <SizeMenu onChange={onSizeChange} size={size} />
     </div>
   );
 });
@@ -238,22 +278,22 @@ const modules = {
 };
 
 const formats = [
-  'header',
-  'font',
-  'size',
-  'bold',
-  'italic',
-  'underline',
+  'header', //Done
+  'font', //Done
+  'size', //Done
+  'bold', //Done
+  'italic', //Done
+  'underline', //Done
   'script',
-  'blockquote',
-  'list',
-  'bullet',
-  'indent',
+  'blockquote', //Done
+  'list', //Done
+  'bullet', //Done
+  'indent', //Done
   'link',
   'image',
   'video',
   'color',
-  'align'
+  'align' //Done
 ];
 
 const QuillEditor = (props) => {

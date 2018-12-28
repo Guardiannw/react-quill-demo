@@ -57,6 +57,26 @@ describe('Toolbar', () => {
         cy.contains('Hello').should('not.match', 'blockquote');
     });
 
+    it('should appropriately set the `script` on button press.', () => {
+        cy.visit('http://localhost:3000');
+
+        cy.get('.ql-editor').type('Hello');
+
+        cy.contains('Hello').highlight();
+
+        cy.get('[data-cy="toolbar"] [value="super"]').click();
+
+        cy.contains('Hello').should('match', 'sup');
+
+        cy.get('[data-cy="toolbar"] [value="sub"]').click();
+
+        cy.contains('Hello').should('match', 'sub');
+
+        cy.get('[data-cy="toolbar"] [value="sub"]').click();
+
+        cy.contains('Hello').should('not.match', 'sub');
+    });
+
     it('should color the text.', () => {
         cy.visit('http://localhost:3000');
 
@@ -154,7 +174,106 @@ describe('Toolbar', () => {
         });
     });
 
-    it.only('should appropriately structure lists on button press.', () => {
+    it('should set the size on button press.', () => {
+        cy.visit('http://localhost:3000');
+
+        cy.get('.ql-editor').type('Hello');
+
+        cy.contains('Hello').highlight();
+
+        cy.get('[data-cy="toolbar-size-select"]').closest('label:contains(\'Size\') + div').then(($el) => {
+            cy.wrap($el).click();
+
+            cy.get('li:contains(\'Small\')').click();
+
+            cy.contains('Hello').should('have.class', 'ql-size-small');
+
+            cy.wrap($el).click();
+
+            cy.get('li:contains(\'Large\')').click();
+
+            cy.contains('Hello').should('have.class', 'ql-size-large');
+
+            cy.wrap($el).click();
+
+            cy.get('li:contains(\'Huge\')').click();
+
+            cy.contains('Hello').should('have.class', 'ql-size-huge');
+
+            cy.wrap($el).click();
+
+            cy.get('li:contains(\'Normal\')').click();
+
+            cy.contains('Hello').should('not.have.class', 'ql-size-huge');
+        });
+    });
+
+    it('should appropriately indent on button press.', () => {
+        cy.visit('http://localhost:3000');
+
+        cy.get('.ql-editor').type('Hello');
+
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-1');
+
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-2');
+
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-3');
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-4');
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-5');
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-6');
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-7');
+        cy.get('[data-cy="toolbar"] [value="indent-increase"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-8');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-7');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-6');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-5');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-4');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-3');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-2');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('have.class', 'ql-indent-1');
+
+        cy.get('[data-cy="toolbar"] [value="indent-decrease"]').click();
+
+        cy.contains('Hello').should('not.have.class', 'ql-indent-1');
+    });
+
+    it('should appropriately structure lists on button press.', () => {
         cy.visit('http://localhost:3000');
 
         cy.get('.ql-editor').type('Hello');
