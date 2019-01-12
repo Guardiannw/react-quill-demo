@@ -1,4 +1,4 @@
-import React, { Fragment } from "react";
+import React, { Children, isValidElement, Fragment } from "react";
 import {
     compose,
     keys,
@@ -31,8 +31,11 @@ import {
     indexOf,
     test,
     ifElse,
+    addIndex,
     lensIndex
   } from "ramda";
+
+const mapIndexed = addIndex(map);
 
 const isNotNil = complement(isNil);
 const isNotEmpty = complement(isEmpty);
@@ -44,51 +47,51 @@ const composeEm = ifElse(isEmpty, always(identity), apply(compose));
 const lineAttributePriorityMap = ['script', 'link', 'bold', 'italic', 'underline', 'font', 'size', 'color'];
 const sortLineAttributesByPriority = sortWith([ascend(compose(indexOf(__, lineAttributePriorityMap), head))]);
 
-const formatLine = (config) => ({attributes, data = ''}) => {
-  const composition = reduce((list, [key, value]) => {
-    switch (key) {
+const formatLine = (config) => ({attributes, data = ''}, key) => {
+  const composition = reduce((list, [attr, value]) => {
+    switch (attr) {
       case 'bold':
         if (value)
-          return append(['strong', {}], list);
+          return append(['strong', {key}], list);
         return list;
       case 'underline':
         if (value)
           if (isNotEmpty(list))
-            return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {textDecoration: 'underline'}})), list);
+            return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {textDecoration: 'underline'}, key})), list);
           else
-            return append(['span', {style: {textDecoration: 'underline'}}], list);
+            return append(['span', {style: {textDecoration: 'underline'}, key}], list);
         return list;
       case 'italic':
         if (value)
-          return append(['em', {}], list);
+          return append(['em', {key}], list);
         return list;
       case 'script':
-        return append([substring(0, 3)(value), {}], list);
+        return append([substring(0, 3)(value), {key}], list);
       case 'color':
         if (isNotEmpty(list))
-          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {color: value}})), list);
-        return append(['span', {style: {color: value}}], list);
+          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {color: value}, key})), list);
+        return append(['span', {style: {color: value}, key}], list);
       case 'size':
         const size = path(['sizeMap', value], config);
 
         if (isNotEmpty(list))
-          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontSize: size}})), list);
-        return append(['span', {style: {fontSize: size}}], list);
+          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontSize: size}, key})), list);
+        return append(['span', {style: {fontSize: size}, key}], list);
       case 'link':
-        return append(['a', {href: value}], list);
+        return append(['a', {href: value, key}], list);
       case 'font':
         if (isNotEmpty(list))
-          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontFamily: value}})), list);
-        return append(['span', {style: {fontFamily: value}}], list);
+          return over(lastLens, over(lensIndex(1), mergeDeepLeft({style: {fontFamily: value}, key})), list);
+        return append(['span', {style: {fontFamily: value}, key}], list);
       default:
         return list;
     }
   }, [], sortLineAttributesByPriority(toPairs(attributes))/*?*/);
 
-  const wrapper = composeEm(map(apply(wrap), composition));
+  const wrapper = composeEm(mapIndexed(apply(wrap), composition));
 
   if (data === '\n')
-    return wrapper(<br />);
+    return wrapper(<br key={key} />);
 
   if (typeof data === 'object') {
     const props = {
@@ -111,11 +114,11 @@ const formatLine = (config) => ({attributes, data = ''}) => {
     switch (head(keys(data))) {
       case 'video':
         return (
-          <iframe src={data.video} frameBorder={0} allowFullScreen {...props}/>
+          <iframe key={key} src={data.video} frameBorder={0} allowFullScreen {...props}/>
         );
       case 'image':
         return (
-          <img src={prop('image', data)} {...pick(['alt', 'width', 'height'], attributes)} {...props}/>
+          <img key={key} src={prop('image', data)} {...pick(['alt', 'width', 'height'], attributes)} {...props}/>
         );
     }
   }
@@ -228,26 +231,28 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
       }
     });
 
-  const formatLineGroup = (config) => ({data, attributes}) => {
-    const formattedLines = map(formatLines(config), data);
+  const formatLineGroup = (config) => ({data, attributes}, key) => {
+    const formattedLines = mapIndexed(formatLines(config), data);
 
     switch (prop('list', attributes)) {
       case 'ordered':
         return (
-          <ol>{formattedLines}</ol>
+          <ol key={key}>{formattedLines}</ol>
         );
       case 'bullet':
         return (
-          <ul>{formattedLines}</ul>
+          <ul key={key}>{formattedLines}</ul>
         );
       default:
           return formattedLines;
     }
   };
 
-  const formatLines = (config) => ({data, attributes}) => {
-    const formattedLine = map(formatLine(config), data);
-    let props = {};
+  const formatLines = (config) => ({data, attributes}, key) => {
+    const formattedLine = mapIndexed(formatLine(config), data);
+    let props = {
+      key
+    };
 
     if (has('indent', attributes))
       props = mergeDeepLeft({style: {marginLeft: `calc(${config.indentWidth} * ${attributes.indent})`}}, props);
@@ -273,5 +278,5 @@ export const Delta = ({ delta, sizeMap = {}, indentWidth = '15px'}) => {
     return formattedLine;
   };
 
-  return map(formatLineGroup({sizeMap, indentWidth}), lineGroups);
+  return mapIndexed(formatLineGroup({sizeMap, indentWidth}), lineGroups);
 };

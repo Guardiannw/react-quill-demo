@@ -11,8 +11,11 @@ import {
   values,
   not,
   map,
+  defaultTo,
   complement
 } from "ramda";
+
+import uuid from 'uuid/v4';
 
 // Material UI
 import ToggleButton from "@material-ui/lab/ToggleButton";
@@ -21,6 +24,14 @@ import InputLabel from '@material-ui/core/InputLabel';
 import MenuItem from '@material-ui/core/MenuItem';
 import FormControl from '@material-ui/core/FormControl';
 import Select from '@material-ui/core/Select';
+import TextField from '@material-ui/core/TextField'
+import Input from '@material-ui/core/Input'
+import Paper from '@material-ui/core/Paper'
+import Popper from '@material-ui/core/Popper';
+import RootRef from '@material-ui/core/RootRef';
+import { withStyles } from '@material-ui/styles';
+import IconButton from '@material-ui/core/IconButton';
+import InputAdornment from '@material-ui/core/InputAdornment';
 
 // Material UI Icons
 import FormatQuoteIcon from "@material-ui/icons/FormatQuote";
@@ -37,6 +48,7 @@ import FormatItalicIcon from '@material-ui/icons/FormatItalic';
 import FormatUnderlinedIcon from '@material-ui/icons/FormatUnderlined';
 import FormatColorTextIcon from '@material-ui/icons/FormatColorText';
 import ArrowDropDownIcon from '@material-ui/icons/ArrowDropDown';
+import InsertLinkIcon from '@material-ui/icons/InsertLink';
 
 // Custom Icons
 import {
@@ -118,13 +130,185 @@ const FontMenu = ({onChange, fonts = [], font = ""}) => {
   );
 };
 
+const LinkInput = ({value, onChange}) => {
+  return (
+    <FormControl>
+      <InputLabel htmlFor="toolbar-link-input">Link</InputLabel>
+      <Input id="toolbar-link-input"
+        type="text"
+        value={value}
+        onChange={onChange}
+        endAdornment={(
+          <InputAdornment position="end">
+            <IconButton>
+              <InsertLinkIcon />
+            </IconButton>
+          </InputAdornment>
+        )} />
+    </FormControl>
+  );
+};
+
+const LinkEditPopover = ({anchorBounds, open, container, link, onChange}) => {
+  const parentContainer = useMemo(() => container && container.parentElement, [container]);
+
+  const anchorEl = useMemo(() => {
+    const getBoundingClientRect = () => {
+
+      if (!parentContainer)
+        return {
+          left: 0,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0
+        };
+      
+      const containerRect = parentContainer.getBoundingClientRect();
+  
+      if (!anchorBounds)
+        return containerRect;
+  
+      const width = anchorBounds.width;
+      const height = anchorBounds.height;
+      const left = anchorBounds.left - window.pageXOffset;
+      const top = anchorBounds.top - window.pageYOffset;
+      const right = left + width;
+      const bottom = top + height;
+      const x = left;
+      const y = top;
+  
+      return {
+        width,
+        height,
+        left,
+        top,
+        right,
+        bottom,
+        x,
+        y
+      };
+    };
+
+    const boundingRect = getBoundingClientRect();
+
+    return {
+      clientWidth: boundingRect.width,
+      clientHeight: boundingRect.height,
+      getBoundingClientRect
+    };
+  }, [anchorBounds, parentContainer]);
+
+  const modifiers = useMemo(() => {
+    if (container)
+      return {
+        offset: {
+          enabled: false
+        },
+        preventOverflow: {
+          boundariesElement: parentContainer
+        }
+      };
+
+    return {
+
+    };
+  }, [container]);
+
+  return (
+    <Popper
+      container={container}
+      anchorEl={anchorEl}
+      placement="bottom-start"
+      modifiers={modifiers}
+      open={open}>
+        <Paper>
+          {link}
+        </Paper>
+    </Popper>
+  );
+};
+
+const DynamicFormatColorTextIcon = withStyles({
+  root: {
+    '& > path:nth-of-type(2)': {
+      fillOpacity: 1,
+      fill: compose(defaultTo(null), prop('fontColor'))
+    }
+  }
+})(({fontColor, classes, ...props}) => (
+  <FormatColorTextIcon className={classes.root} {...props}/>
+));
+
+const ColorPickerToolbarItem = memo(({color, onColorChange}) => {
+  const [toolbarButton, setToolbarButton] = useState();
+  const [open, setOpen] = useState(false);
+  const toggleOpen = useCallback(() => setOpen((x) => !x), [setOpen]);
+
+  const formattedColor = useMemo(() => ({
+    hex: color || '#000'
+  }), [color]);
+
+  const modifiers = useMemo(() => {
+    return {
+      flip: {
+        enabled: false
+      }
+    };
+  }, []);
+
+  return (
+    <>
+      <RootRef rootRef={setToolbarButton}>
+        <ToggleButton ref={setToolbarButton} onChange={toggleOpen} selected={open}>
+          <DynamicFormatColorTextIcon fontColor={color} />
+          <ArrowDropDownIcon />
+        </ToggleButton>
+      </RootRef>
+      <Popper
+        anchorEl={toolbarButton}
+        placement="bottom-start"
+        modifiers={modifiers}
+        open={open}>
+        <SketchPicker color={formattedColor} onChange={onColorChange} />
+      </Popper>
+    </>
+  );
+});
+
+const InlineToggleButtonGroup = memo(withStyles({
+  root: {
+    margin: '0 8px',
+    display: 'inline-block',
+    verticalAlign: 'bottom',
+    '&$selected': {
+      boxShadow: 'none'
+    }
+  },
+  selected: {
+    boxShadow: 'none'
+  }
+})(ToggleButtonGroup));
+
 const Toolbar = memo(({quill, fonts, sizeMap}) => {
+
+  if (!quill)
+    return <div />;
+
+  const [, updateComponent] = useState();
+  const refresh = useMemo(() => compose(updateComponent, uuid), [updateComponent]);
+
   const getAttributes = useCallback(() => quill ? quill.getFormat() : {}, [quill]);
 
   const attributes = getAttributes();
 
   const onChange = useCallback((event, alignment) => {
     quill.format('align', alignment, 'user');
+
+    refresh();
   }, [quill]);
 
   const formats = useMemo(() => keys(attributes), [attributes]);
@@ -134,36 +318,73 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
     const attributes = getAttributes();
     const previousValue = has(format, attributes) ? prop(format, attributes) : false;
     quill.format(format, not(previousValue), 'user');
+
+    refresh();
   }, [quill]);
 
   const onColorChange = useCallback((color) => {
     quill.format('color', color && color.hex, 'user');
+
+    refresh();
   }, [quill]);
 
   const onHeaderChange = useCallback((value) => {
     quill.format('header', value);
+
+    refresh();
   }, [quill]);
 
   const onFontChange = useCallback((value) => {
     quill.format('font', value);
+
+    refresh();
   }, [quill]);
 
   const onSizeChange = useCallback((value) => {
     quill.format('size', value);
+
+    refresh();
   }, [quill]);
 
   const onScriptChange = useCallback((event) => {
     const format = path(['currentTarget', 'value'], event);
     const previousValue = getAttributes().script;
     quill.format('script', previousValue === format ? false : format);
+
+    refresh();
+  }, [quill]);
+
+  const onLinkChange = useCallback((value) => {
+    quill.format('link', value == null ? false : value);
+
+    refresh();
+  }, [quill]);
+
+  const tooltipContainer = useMemo(() => {
+    if (!quill)
+      return;
+
+    let element = quill.addContainer('ql-react-tooltip');
+
+    element.setAttribute('style', `
+      pointer-events: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    `);
+
+    return element;
   }, [quill]);
 
   const script = attributes.script;
   const alignment = attributes.align;
-  const color = attributes.color || '#000';
+  const color = attributes.color;
   const header = attributes.header;
   const font = attributes.font;
   const size = attributes.size;
+  const link = attributes.link;
   const block = useMemo(() => {
     if (attributes.list === 'ordered')
       return 'list-ordered';
@@ -202,11 +423,22 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
           quill.format('indent', attributes.indent + 1);
         break;
     }
+
+    refresh();
   }, [quill]);
+
+  const bounds = useMemo(() => {
+    if (quill) {
+      const {index, length} = quill.getSelection();
+      const bounds = quill.getBounds(index, length);
+
+      return bounds;
+    }
+  }, [quill, link]);
 
   return (
     <div data-cy="toolbar">
-      <ToggleButtonGroup value={alignment} exclusive onChange={onChange}>
+      <InlineToggleButtonGroup value={alignment} exclusive onChange={onChange} selected="auto" selected="auto">
         <ToggleButton value={null}>
           <FormatAlignLeftIcon />
         </ToggleButton>
@@ -219,8 +451,9 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
         <ToggleButton value="justify">
           <FormatAlignJustifyIcon />
         </ToggleButton>
-      </ToggleButtonGroup>
-      <ToggleButtonGroup value={formats} onChange={handleFormatsChange}>
+      </InlineToggleButtonGroup>
+
+      <InlineToggleButtonGroup value={formats} onChange={handleFormatsChange} selected="auto">
         <ToggleButton value="bold">
           <FormatBoldIcon />
         </ToggleButton>
@@ -230,23 +463,22 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
         <ToggleButton value="underline">
           <FormatUnderlinedIcon />
         </ToggleButton>
-        <ToggleButton value="color">
-          <FormatColorTextIcon />
-          <ArrowDropDownIcon />
-        </ToggleButton>
+        <ColorPickerToolbarItem color={color} onColorChange={onColorChange} />
         <ToggleButton value="blockquote">
           <FormatQuoteIcon />
         </ToggleButton>
-      </ToggleButtonGroup>
-      <ToggleButtonGroup value={script} exclusive onChange={onScriptChange}>
+      </InlineToggleButtonGroup>
+
+      <InlineToggleButtonGroup value={script} exclusive onChange={onScriptChange} selected="auto">
         <ToggleButton value="super">
           <FormatSuperscriptIcon />
         </ToggleButton>
         <ToggleButton value="sub">
           <FormatSubscriptIcon />
         </ToggleButton>
-      </ToggleButtonGroup>
-      <ToggleButtonGroup value={block} exclusive onChange={onBlocksChange}>
+      </InlineToggleButtonGroup>
+
+      <InlineToggleButtonGroup value={block} exclusive onChange={onBlocksChange} selected="auto">
         <ToggleButton value="list-ordered">
           <FormatListNumberedIcon />
         </ToggleButton>
@@ -259,23 +491,20 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
         <ToggleButton value="indent-increase">
           <FormatIndentIncreaseIcon />
         </ToggleButton>
-      </ToggleButtonGroup>
-      {formats.includes('color') && (
-        <SketchPicker color={color} onChange={onColorChange} />
-      )}
+      </InlineToggleButtonGroup>
+
+      <LinkEditPopover anchorBounds={bounds} open={!!link} container={tooltipContainer} link={link}/>
+
       <HeaderMenu onChange={onHeaderChange} header={header}/>
+
       <FontMenu onChange={onFontChange} fonts={fonts} font={font} />
+
       <SizeMenu onChange={onSizeChange} size={size} />
+
+      <LinkInput onChange={onLinkChange} value={link} />
     </div>
   );
 });
-
-const modules = {
-  toolbar: {
-    container: '#toolbar',
-    handlers: {}
-  }
-};
 
 const formats = [
   'header', //Done
@@ -284,15 +513,15 @@ const formats = [
   'bold', //Done
   'italic', //Done
   'underline', //Done
-  'script',
+  'script', //Done
   'blockquote', //Done
   'list', //Done
   'bullet', //Done
   'indent', //Done
   'link',
   'image',
-  'video',
-  'color',
+  'video', // TODO: Need to find a way to upload videos to s3 in the editor?
+  'color', // TODO: WORKING ON IT
   'align' //Done
 ];
 
@@ -314,27 +543,7 @@ const QuillEditor = (props) => {
       quillEditor.current = new Quill(quillRef.current, {
         theme: 'snow',
         modules: {
-          toolbar: [
-            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
-            ['blockquote', 'code-block'],
-          
-            [{ 'header': 1 }, { 'header': 2 }],               // custom button values
-            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-            [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
-            [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
-            [{ 'direction': 'rtl' }],                         // text direction
-          
-            [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
-            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-          
-            [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
-            [{ 'font': [] }],
-            [{ 'align': [] }],
-            ['link'],
-            ['video'],
-          
-            ['clean']                                         // remove formatting button
-          ]
+          toolbar: false
         },
         formats: props.formats
       });
@@ -380,7 +589,9 @@ const QuillEditor = (props) => {
         const editor = quillEditor.current;
 
         const onSelectionChange = (range, oldRange) => {
-          props.onSelectionChange([range, oldRange]);
+          //TODO: Figure out why this is causing it to re-focus
+          if (range !== null)
+            props.onSelectionChange([range, oldRange]);
         };
 
         editor.on('selection-change', onSelectionChange);
