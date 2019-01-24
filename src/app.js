@@ -1,37 +1,43 @@
-import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { forwardRef, memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Quill from "quill";
 import {
-  isNil,
   toPairs,
+  isNil,
   has,
+  both,
   prop,
+  invoker,
+  useWith,
+  equals,
   compose,
   path,
   keys,
   values,
   not,
+  nAry,
   map,
-  defaultTo,
-  complement
+  defaultTo
 } from "ramda";
 
 import uuid from 'uuid/v4';
 
 // Material UI
+import { createMuiTheme } from '@material-ui/core/styles';
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
-import InputLabel from '@material-ui/core/InputLabel';
 import MenuItem from '@material-ui/core/MenuItem';
-import FormControl from '@material-ui/core/FormControl';
-import Select from '@material-ui/core/Select';
+import Grid from '@material-ui/core/Grid';
 import TextField from '@material-ui/core/TextField'
 import Input from '@material-ui/core/Input'
 import Paper from '@material-ui/core/Paper'
 import Popper from '@material-ui/core/Popper';
 import RootRef from '@material-ui/core/RootRef';
-import { withStyles } from '@material-ui/styles';
-import IconButton from '@material-ui/core/IconButton';
-import InputAdornment from '@material-ui/core/InputAdornment';
+import { withStyles, makeStyles, ThemeProvider } from '@material-ui/styles';
+import ClickAwayListener from '@material-ui/core/ClickAwayListener';
+import Button from '@material-ui/core/Button';
+
+// Material UI Colors
+import blue from '@material-ui/core/colors/blue';
 
 // Material UI Icons
 import FormatQuoteIcon from "@material-ui/icons/FormatQuote";
@@ -49,6 +55,8 @@ import FormatUnderlinedIcon from '@material-ui/icons/FormatUnderlined';
 import FormatColorTextIcon from '@material-ui/icons/FormatColorText';
 import ArrowDropDownIcon from '@material-ui/icons/ArrowDropDown';
 import InsertLinkIcon from '@material-ui/icons/InsertLink';
+import InsertPhotoIcon from '@material-ui/icons/InsertPhoto';
+import MovieIcon from '@material-ui/icons/Movie';
 
 // Custom Icons
 import {
@@ -60,36 +68,63 @@ import { SketchPicker } from 'react-color';
 
 import { useDelta } from "./useDelta";
 
-import "quill/dist/quill.snow.css";
+import {convertFileToDataURI} from './convert-to-data-uri';
+
 import "./styles.css";
 
+const defaultTheme = createMuiTheme({});
+
+const useSizeMenuStyles = makeStyles({
+  root: {
+    width: 75,
+    '&&': {
+      marginLeft: 8,
+      marginRight: 8
+    }
+  }
+});
+
 const SizeMenu = ({onChange, size = ""}) => {
+  const classes = useSizeMenuStyles();
+
   const onSizeChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
 
   return (
-    <FormControl>
-      <InputLabel htmlFor="toolbar-size-select">Size</InputLabel>
-      <Select
-        value={size}
-        onChange={onSizeChange}
-        id="toolbar-size-select"
-        data-cy="toolbar-size-select">
-        <MenuItem value="">Normal</MenuItem>
-        <MenuItem value="small">Small</MenuItem>
-        <MenuItem value="large">Large</MenuItem>
-        <MenuItem value="huge">Huge</MenuItem>
-      </Select>
-    </FormControl>
+    <TextField select
+      classes={classes}
+      label="Size"
+      value={size}
+      onChange={onSizeChange}
+      id="toolbar-size-select"
+      data-cy="toolbar-size-select">
+      <MenuItem value="">Normal</MenuItem>
+      <MenuItem value="small">Small</MenuItem>
+      <MenuItem value="large">Large</MenuItem>
+      <MenuItem value="huge">Huge</MenuItem>
+    </TextField>
   );
 };
 
+const useHeaderMenuStyles = makeStyles({
+  root: {
+    width: 100,
+    '&&': {
+      marginLeft: 8,
+      marginRight: 8
+    }
+  }
+});
+
 const HeaderMenu = ({onChange, header = ""}) => {
+  const classes = useHeaderMenuStyles();
+
   const onHeaderChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
 
   return (
-    <FormControl>
-      <InputLabel htmlFor="toolbar-header-select">Header</InputLabel>
-      <Select
+      <TextField
+        select
+        classes={classes}
+        label="Header"
         value={header}
         onChange={onHeaderChange}
         id="toolbar-header-select"
@@ -101,12 +136,23 @@ const HeaderMenu = ({onChange, header = ""}) => {
         <MenuItem value="4">Header 4</MenuItem>
         <MenuItem value="5">Header 5</MenuItem>
         <MenuItem value="6">Header 6</MenuItem>
-      </Select>
-    </FormControl>
+      </TextField>
   );
 };
 
+const useFontMenuStyles = makeStyles({
+  root: {
+    width: 100,
+    '&&': {
+      marginLeft: 8,
+      marginRight: 8
+    }
+  }
+});
+
 const FontMenu = ({onChange, fonts = [], font = ""}) => {
+  const classes = useFontMenuStyles();
+
   const onFontChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
 
   const menuItems = useMemo(() => {
@@ -116,43 +162,21 @@ const FontMenu = ({onChange, fonts = [], font = ""}) => {
   }, [fonts]);
 
   return (
-    <FormControl>
-      <InputLabel htmlFor="toolbar-font-select">Font</InputLabel>
-      <Select
+      <TextField
+        select
+        classes={classes}
+        label="Font"
         value={font}
         onChange={onFontChange}
         id="toolbar-font-select"
         data-cy="toolbar-font-select">
           <MenuItem value="">None</MenuItem>
           {menuItems}
-      </Select>
-    </FormControl>
+      </TextField>
   );
 };
 
-const LinkInput = ({value, onChange}) => {
-  return (
-    <FormControl>
-      <InputLabel htmlFor="toolbar-link-input">Link</InputLabel>
-      <Input id="toolbar-link-input"
-        type="text"
-        value={value}
-        onChange={onChange}
-        endAdornment={(
-          <InputAdornment position="end">
-            <IconButton>
-              <InsertLinkIcon />
-            </IconButton>
-          </InputAdornment>
-        )} />
-    </FormControl>
-  );
-};
-
-const LinkEditPopover = ({anchorBounds, open, container, link, onChange}) => {
-  const parentContainer = useMemo(() => container && container.parentElement, [container]);
-
-  const anchorEl = useMemo(() => {
+const createAnchorEl = (anchorBounds, parentContainer) => {
     const getBoundingClientRect = () => {
 
       if (!parentContainer)
@@ -174,8 +198,8 @@ const LinkEditPopover = ({anchorBounds, open, container, link, onChange}) => {
   
       const width = anchorBounds.width;
       const height = anchorBounds.height;
-      const left = anchorBounds.left - window.pageXOffset;
-      const top = anchorBounds.top - window.pageYOffset;
+      const left = anchorBounds.left + containerRect.left;
+      const top = anchorBounds.top + containerRect.top;
       const right = left + width;
       const bottom = top + height;
       const x = left;
@@ -200,36 +224,6 @@ const LinkEditPopover = ({anchorBounds, open, container, link, onChange}) => {
       clientHeight: boundingRect.height,
       getBoundingClientRect
     };
-  }, [anchorBounds, parentContainer]);
-
-  const modifiers = useMemo(() => {
-    if (container)
-      return {
-        offset: {
-          enabled: false
-        },
-        preventOverflow: {
-          boundariesElement: parentContainer
-        }
-      };
-
-    return {
-
-    };
-  }, [container]);
-
-  return (
-    <Popper
-      container={container}
-      anchorEl={anchorEl}
-      placement="bottom-start"
-      modifiers={modifiers}
-      open={open}>
-        <Paper>
-          {link}
-        </Paper>
-    </Popper>
-  );
 };
 
 const DynamicFormatColorTextIcon = withStyles({
@@ -246,7 +240,13 @@ const DynamicFormatColorTextIcon = withStyles({
 const ColorPickerToolbarItem = memo(({color, onColorChange}) => {
   const [toolbarButton, setToolbarButton] = useState();
   const [open, setOpen] = useState(false);
-  const toggleOpen = useCallback(() => setOpen((x) => !x), [setOpen]);
+  const toggleOpen = useCallback(() => setOpen(not), [setOpen]);
+
+  // Only use the click-away to close the menu if it is not the button itself.
+  const close = useCallback((event) => {
+    if (!event.composedPath().includes(toolbarButton))
+      setOpen(false);
+  }, [toolbarButton]);
 
   const formattedColor = useMemo(() => ({
     hex: color || '#000'
@@ -263,7 +263,7 @@ const ColorPickerToolbarItem = memo(({color, onColorChange}) => {
   return (
     <>
       <RootRef rootRef={setToolbarButton}>
-        <ToggleButton ref={setToolbarButton} onChange={toggleOpen} selected={open}>
+        <ToggleButton onChange={toggleOpen} selected={open}>
           <DynamicFormatColorTextIcon fontColor={color} />
           <ArrowDropDownIcon />
         </ToggleButton>
@@ -273,7 +273,334 @@ const ColorPickerToolbarItem = memo(({color, onColorChange}) => {
         placement="bottom-start"
         modifiers={modifiers}
         open={open}>
-        <SketchPicker color={formattedColor} onChange={onColorChange} />
+        <ClickAwayListener onClickAway={close}>
+          <SketchPicker color={formattedColor} onChange={onColorChange} />
+        </ClickAwayListener>
+      </Popper>
+    </>
+  );
+});
+
+const usePopperModifiers = (boundariesElement) => {
+  return useMemo(() => {
+    if (boundariesElement)
+      return {
+        preventOverflow: {
+          boundariesElement
+        },
+        offset: {
+          offset: '0, 4'
+        },
+        offsetInContainer: {
+          enabled: true,
+          order: 825,
+          fn: (data) => {
+            const boundaryRect = boundariesElement.getBoundingClientRect();
+            const boundaryOffsetY = boundaryRect.y + window.pageYOffset;
+            const boundaryOffsetX = boundaryRect.x + window.pageXOffset;
+
+            data.offsets.reference.top -= boundaryOffsetY;
+            data.offsets.reference.left -= boundaryOffsetX;
+            data.offsets.popper.top -= boundaryOffsetY;
+            data.offsets.popper.left -= boundaryOffsetX;
+
+            return data;
+          }
+        }
+      };
+  }, [boundariesElement]);
+};
+
+const useLinkPaperStyles = makeStyles((theme) => {
+  return {
+    root: {
+      ...theme.mixins.gutters(),
+      paddingTop: theme.spacing.unit,
+      paddingBottom: theme.spacing.unit
+    },
+    button: {
+      '&&': {
+        backgroundColor: blue[500],
+        '&:hover': {
+          backgroundColor: blue[700]
+        }
+      }
+    }
+  };
+});
+
+const ImageInput = memo(({anchorBounds, container, onSubmit}) => {
+  const classes = useLinkPaperStyles();
+
+  const parentContainer = prop('parentElement', container);
+
+  const anchorEl = useMemo(() => createAnchorEl(anchorBounds, parentContainer), [anchorBounds, parentContainer]);
+
+  const [toolbarButton, setToolbarButton] = useState();
+  const [open, setOpen] = useState(false);
+  const [imageEmbed, setImageEmbed] = useState('');
+
+  const toggleOpen = useCallback(() => setOpen(not), [setOpen]);
+
+  // Only use the click-away to close the menu if it is not the button itself.
+  const close = useCallback((event) => {
+    if (!event.composedPath().includes(toolbarButton)) {
+      setOpen(false);
+      setImageEmbed('');
+    }
+  }, [toolbarButton]);
+
+  const handleChange = useCallback(compose(setImageEmbed, path(['target', 'value'])), [setImageEmbed]);
+
+  const handleSubmit = useCallback(() => {
+    onSubmit(imageEmbed);
+    setOpen(false);
+    setImageEmbed('');
+  }, [imageEmbed, onSubmit]);
+
+  const handleUpload = useCallback(async (event) => {
+    const file = path(['target', 'files', 0], event);
+
+    if (isNil(file))
+      return;
+
+    const uri = await convertFileToDataURI(file);
+
+    setImageEmbed(uri);
+  }, []);
+
+  const modifiers = usePopperModifiers(parentContainer);
+
+  return (
+    <>
+      <RootRef rootRef={setToolbarButton}>
+        <ToggleButton onChange={toggleOpen}>
+          <InsertPhotoIcon />
+        </ToggleButton>
+      </RootRef>
+      <Popper
+        anchorEl={anchorEl}
+        container={container}
+        placement="bottom-start"
+        modifiers={modifiers}
+        open={open}>
+        <ClickAwayListener mouseEvent={'onMouseDown'} onClickAway={close}>
+          <Paper className={classes.root}>
+            <Grid container spacing={16} alignItems="center">
+              <Grid item>
+                Image:
+              </Grid>
+              <Grid item xs>
+                <Input className={classes.input} placeholder="Enter Image URL Here..." value={imageEmbed} onChange={handleChange}/>
+              </Grid>
+              <Grid item xs container spacing={8} wrap="nowrap">
+                <Grid item>
+                  <Button variant="contained" color="default" component="label">
+                    <span>Upload</span>
+                    <input type="file" accept="image/*" onChange={handleUpload} hidden/>
+                  </Button>
+                </Grid>
+                <Grid item>
+                  <Button variant="contained" color="primary" className={classes.button} onClick={handleSubmit}>
+                    Accept
+                  </Button>
+                </Grid>
+              </Grid>
+            </Grid>
+          </Paper>
+        </ClickAwayListener>
+      </Popper>
+    </>
+  );
+});
+
+const VideoInput = memo(({anchorBounds, container, onSubmit}) => {
+  const classes = useLinkPaperStyles();
+
+  const parentContainer = prop('parentElement', container);
+
+  const anchorEl = useMemo(() => createAnchorEl(anchorBounds, parentContainer), [anchorBounds, parentContainer]);
+
+  const [toolbarButton, setToolbarButton] = useState();
+  const [open, setOpen] = useState(false);
+  const [videoEmbed, setVideoEmbed] = useState('');
+
+  const toggleOpen = useCallback(() => setOpen(not), [setOpen]);
+
+  // Only use the click-away to close the menu if it is not the button itself.
+  const close = useCallback((event) => {
+    if (!event.composedPath().includes(toolbarButton)) {
+      setOpen(false);
+      setVideoEmbed('');
+    }
+  }, [toolbarButton]);
+
+  const handleChange = useCallback(compose(setVideoEmbed, path(['target', 'value'])), [setVideoEmbed]);
+
+  const handleSubmit = useCallback(() => {
+    onSubmit(videoEmbed);
+    setOpen(false);
+    setVideoEmbed('');
+  }, [videoEmbed, onSubmit]);
+
+  const modifiers = usePopperModifiers(parentContainer);
+
+  return (
+    <>
+      <RootRef rootRef={setToolbarButton}>
+        <ToggleButton onChange={toggleOpen}>
+          <MovieIcon />
+        </ToggleButton>
+      </RootRef>
+      <Popper
+        anchorEl={anchorEl}
+        container={container}
+        placement="bottom-start"
+        modifiers={modifiers}
+        open={open}>
+        <ClickAwayListener mouseEvent={'onMouseDown'} onClickAway={close}>
+          <Paper className={classes.root}>
+            <Grid container spacing={16} alignItems="center">
+              <Grid item>
+                Embed:
+              </Grid>
+              <Grid item xs>
+                <Input className={classes.input} placeholder="Enter Video Embed Here..." value={videoEmbed} onChange={handleChange}/>
+              </Grid>
+              <Grid item>
+                <Button variant="contained" color="primary" className={classes.button} onClick={handleSubmit}>
+                  Accept
+                </Button>
+              </Grid>
+            </Grid>
+          </Paper>
+        </ClickAwayListener>
+      </Popper>
+    </>
+  );
+});
+
+const LinkInputPaper = ({link = '', onChange, onAccept}) => {
+
+  const classes = useLinkPaperStyles();
+
+  const handleAccept = useCallback(nAry(0, onAccept), [onAccept]);
+  const handleChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
+
+  return (
+    <Paper className={classes.root}>
+      <Grid container spacing={16} alignItems="center">
+        <Grid item>
+          Link:
+        </Grid>
+        <Grid item xs>
+          <Input className={classes.input} placeholder="Enter Link Here..." value={link} onChange={handleChange}/>
+        </Grid>
+        <Grid item>
+          <Button variant="contained" color="primary" className={classes.button} onClick={handleAccept}>
+            Accept
+          </Button>
+        </Grid>
+      </Grid>
+    </Paper>
+  );
+};
+
+const LinkEditPaper = ({link = '', onChange, onAccept, onRemove}) => {
+
+  const classes = useLinkPaperStyles();
+
+  const handleAccept = useCallback(nAry(0, onAccept), [onAccept]);
+  const handleChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
+  const handleRemove = useCallback(nAry(0, onRemove), [onRemove]);
+
+  return (
+    <Paper className={classes.root}>
+      <Grid container spacing={16} alignItems="center">
+        <Grid item>
+          Edit:
+        </Grid>
+        <Grid item xs>
+          <Input className={classes.input} placeholder="Enter Link Here..." value={link} onChange={handleChange}/>
+        </Grid>
+        <Grid item xs container spacing={8} wrap="nowrap">
+          <Grid item>
+            <Button variant="contained" color="primary" className={classes.button} onClick={handleAccept}>
+              Save
+            </Button>
+          </Grid>
+          <Grid item>
+            <Button variant="contained" color="secondary" onClick={handleRemove}>
+              Remove
+            </Button>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Paper>
+  );
+};
+
+const LinkInput = memo(({anchorBounds, link, container, onLinkChange}) => {
+  const parentContainer = prop('parentElement', container);
+
+  const anchorEl = useMemo(() => createAnchorEl(anchorBounds, parentContainer), [anchorBounds, parentContainer]);
+
+  const [toolbarButton, setToolbarButton] = useState();
+  const [open, setOpen] = useState(false);
+  const [tempLink, setTempLink] = useState(link);
+
+  //TODO: Consider whether or not this is the best approach.
+  useMemo(() => {
+    setTempLink(link);
+
+    if (link)
+      setOpen(true);
+    else
+      setOpen(false);
+  }, [link]);
+
+  const toggleOpen = useCallback(() => setOpen(not), [setOpen]);
+
+  // Only use the click-away to close the menu if it is not the button itself.
+  const close = useCallback((event) => {
+    if (!event.composedPath().includes(toolbarButton)) {
+      setOpen(false);
+      setTempLink(link);
+    }
+  }, [toolbarButton]);
+
+  const handleLinkChange = useCallback(() => {
+    onLinkChange(tempLink);
+    setOpen(false);
+  }, [tempLink, onLinkChange]);
+
+  const handleLinkRemove = useCallback(() => {
+    onLinkChange();
+    setOpen(false);
+  }, [onLinkChange]);
+
+  const modifiers = usePopperModifiers(parentContainer);
+
+  return (
+    <>
+      <RootRef rootRef={setToolbarButton}>
+        <ToggleButton onChange={toggleOpen}>
+          <InsertLinkIcon />
+        </ToggleButton>
+      </RootRef>
+      <Popper
+        anchorEl={anchorEl}
+        container={container}
+        placement="bottom-start"
+        modifiers={modifiers}
+        open={open}>
+        <ClickAwayListener mouseEvent={'onMouseDown'} onClickAway={close}>
+          {link ? (
+            <LinkEditPaper link={tempLink} onChange={setTempLink} onAccept={handleLinkChange} onRemove={handleLinkRemove} />
+          ) : (
+            <LinkInputPaper link={tempLink} onChange={setTempLink} onAccept={handleLinkChange} />
+          )}
+        </ClickAwayListener>
       </Popper>
     </>
   );
@@ -293,25 +620,38 @@ const InlineToggleButtonGroup = memo(withStyles({
   }
 })(ToggleButtonGroup));
 
-const Toolbar = memo(({quill, fonts, sizeMap}) => {
+const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
 
-  if (!quill)
+  if (!quill || !quillRef)
     return <div />;
 
   const [, updateComponent] = useState();
   const refresh = useMemo(() => compose(updateComponent, uuid), [updateComponent]);
 
+  const tooltipContainer = useMemo(() => {
+    if (!quill || !quillRef)
+      return;
+
+    let element = quill.addContainer('ql-react-tooltip', quillRef.current.firstChild);
+
+    element.setAttribute('style', `
+      position: relative;
+    `);
+
+    return element;
+  }, [quill, quillRef]);
+
   const getAttributes = useCallback(() => quill ? quill.getFormat() : {}, [quill]);
 
   const attributes = getAttributes();
 
-  const onChange = useCallback((event, alignment) => {
+  const formats = useMemo(() => keys(attributes), [attributes]);
+
+  const handleAlignmentChange = useCallback((event, alignment) => {
     quill.format('align', alignment, 'user');
 
     refresh();
   }, [quill]);
-
-  const formats = useMemo(() => keys(attributes), [attributes]);
 
   const handleFormatsChange = useCallback((event) => {
     const format = path(['currentTarget', 'value'], event);
@@ -322,27 +662,41 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
     refresh();
   }, [quill]);
 
-  const onColorChange = useCallback((color) => {
+  const handleColorChange = useCallback((color) => {
     quill.format('color', color && color.hex, 'user');
 
     refresh();
   }, [quill]);
 
-  const onHeaderChange = useCallback((value) => {
+  const handleHeaderChange = useCallback((value) => {
     quill.format('header', value);
 
     refresh();
   }, [quill]);
 
-  const onFontChange = useCallback((value) => {
+  const handleFontChange = useCallback((value) => {
     quill.format('font', value);
 
     refresh();
   }, [quill]);
 
-  const onSizeChange = useCallback((value) => {
+  const handleSizeChange = useCallback((value) => {
     quill.format('size', value);
 
+    refresh();
+  }, [quill]);
+
+  const handleEmbedVideo = useCallback((value) => {
+    const index = prop('index', quill.getSelection(true));
+    quill.insertEmbed(index, 'video', value);
+    
+    refresh();
+  }, [quill]);
+
+  const handleEmbedImage = useCallback((value) => {
+    const index = prop('index', quill.getSelection(true));
+    quill.insertEmbed(index, 'image', value);
+    
     refresh();
   }, [quill]);
 
@@ -352,30 +706,6 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
     quill.format('script', previousValue === format ? false : format);
 
     refresh();
-  }, [quill]);
-
-  const onLinkChange = useCallback((value) => {
-    quill.format('link', value == null ? false : value);
-
-    refresh();
-  }, [quill]);
-
-  const tooltipContainer = useMemo(() => {
-    if (!quill)
-      return;
-
-    let element = quill.addContainer('ql-react-tooltip');
-
-    element.setAttribute('style', `
-      pointer-events: none;
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    `);
-
-    return element;
   }, [quill]);
 
   const script = attributes.script;
@@ -427,18 +757,92 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
     refresh();
   }, [quill]);
 
-  const bounds = useMemo(() => {
+  const selection = (() => {
+    if (quill)
+      return quill.getSelection();
+
+    return {
+      index: 0,
+      length: 0
+    };
+  })();
+
+  const bounds = (() => {
     if (quill) {
-      const {index, length} = quill.getSelection();
+      const {index, length} = selection;
       const bounds = quill.getBounds(index, length);
 
       return bounds;
     }
-  }, [quill, link]);
+  })();
+
+  const linkSelection = useMemo(() => {
+    if (!link)
+      return;
+
+    const {index, length} = selection;
+
+    if (length > 0)
+      return;
+
+    const [leaf] = quill.getLeaf(index);
+
+    let parentLinkBlot = leaf;
+
+    // Search for parent link
+    while(path(['statics', 'tagName'], parentLinkBlot) !== "A")
+      parentLinkBlot = parentLinkBlot.parent;
+
+    let firstLinkBlot = parentLinkBlot;
+
+    const getLink = compose(prop('link'), invoker(0, 'formats'));
+    const eqLinks = useWith(equals, [getLink, getLink]);
+    const matchesLink = eqLinks(parentLinkBlot);
+    const isLinkBlot = compose(equals('A'), path(['statics', 'tagName']));
+    const isLinkAndMatches = both(isLinkBlot, matchesLink);
+
+    // Search for previous links that are paired
+    while(isLinkAndMatches(prop('prev', firstLinkBlot)))
+      firstLinkBlot = firstLinkBlot.prev;
+
+    let lastLinkBlot = parentLinkBlot;
+
+    while(isLinkAndMatches(prop('next', lastLinkBlot)))
+      lastLinkBlot = lastLinkBlot.next;
+
+    const linkIndex = quill.getIndex(firstLinkBlot);
+    const linkLength = (() => {
+      let initialBlot = firstLinkBlot;
+      let count = initialBlot.length();
+      while(initialBlot != lastLinkBlot) {
+        count += initialBlot.next.length();
+        initialBlot = initialBlot.next;
+      }
+      return count;
+    })();
+
+    return {
+      index: linkIndex,
+      length: linkLength
+    };
+  }, [link]);
+
+  const linkBounds = useMemo(() => linkSelection && quill.getBounds(linkSelection.index, linkSelection.length), [linkSelection]);
+
+  const handleLinkChange = useCallback((value) => {
+    const formattedValue = value == null ? false : value; 
+
+    if (linkSelection)
+      quill.formatText(linkSelection.index, linkSelection.length, 'link', formattedValue);
+    else
+      quill.format('link', formattedValue);
+
+    refresh();
+  }, [quill, linkSelection]);
 
   return (
     <div data-cy="toolbar">
-      <InlineToggleButtonGroup value={alignment} exclusive onChange={onChange} selected="auto" selected="auto">
+      <InlineToggleButtonGroup value={alignment} exclusive onChange={handleAlignmentChange} selected="auto" selected="auto">
         <ToggleButton value={null}>
           <FormatAlignLeftIcon />
         </ToggleButton>
@@ -463,7 +867,7 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
         <ToggleButton value="underline">
           <FormatUnderlinedIcon />
         </ToggleButton>
-        <ColorPickerToolbarItem color={color} onColorChange={onColorChange} />
+        <ColorPickerToolbarItem color={color} onColorChange={handleColorChange} />
         <ToggleButton value="blockquote">
           <FormatQuoteIcon />
         </ToggleButton>
@@ -493,15 +897,15 @@ const Toolbar = memo(({quill, fonts, sizeMap}) => {
         </ToggleButton>
       </InlineToggleButtonGroup>
 
-      <LinkEditPopover anchorBounds={bounds} open={!!link} container={tooltipContainer} link={link}/>
+      <InlineToggleButtonGroup>
+        <LinkInput anchorBounds={linkBounds || bounds} container={tooltipContainer} link={link} onLinkChange={handleLinkChange} />
+        <VideoInput anchorBounds={bounds} container={tooltipContainer} onSubmit={handleEmbedVideo} />
+        <ImageInput anchorBounds={bounds} container={tooltipContainer} onSubmit={handleEmbedImage} />
+      </InlineToggleButtonGroup>
 
-      <HeaderMenu onChange={onHeaderChange} header={header}/>
-
-      <FontMenu onChange={onFontChange} fonts={fonts} font={font} />
-
-      <SizeMenu onChange={onSizeChange} size={size} />
-
-      <LinkInput onChange={onLinkChange} value={link} />
+      <HeaderMenu onChange={handleHeaderChange} header={header}/>
+      <FontMenu onChange={handleFontChange} fonts={fonts} font={font} />
+      <SizeMenu onChange={handleSizeChange} size={size} />
     </div>
   );
 });
@@ -518,17 +922,16 @@ const formats = [
   'list', //Done
   'bullet', //Done
   'indent', //Done
-  'link',
-  'image',
-  'video', // TODO: Need to find a way to upload videos to s3 in the editor?
-  'color', // TODO: WORKING ON IT
+  'link',//Done
+  'image', //Done
+  'video', //Done
+  'color', //Done
   'align' //Done
 ];
 
-const QuillEditor = (props) => {
-  const quillRef = useRef(null);
+const QuillEditor = forwardRef((props, quillRef) => {
   const quillEditor = useRef(null);
-  const fonts = useMemo(() => props.fonts || [], []);
+  const fonts = props.fonts || [];
 
   useMemo(() => {
     const FontAttributor = Quill.import('attributors/class/font');
@@ -541,7 +944,7 @@ const QuillEditor = (props) => {
   useEffect(
     () => {
       quillEditor.current = new Quill(quillRef.current, {
-        theme: 'snow',
+        theme: null,
         modules: {
           toolbar: false
         },
@@ -589,7 +992,6 @@ const QuillEditor = (props) => {
         const editor = quillEditor.current;
 
         const onSelectionChange = (range, oldRange) => {
-          //TODO: Figure out why this is causing it to re-focus
           if (range !== null)
             props.onSelectionChange([range, oldRange]);
         };
@@ -614,10 +1016,11 @@ const QuillEditor = (props) => {
       </style>
     <div ref={quillRef} />
   </>);
-};
+});
 
 export const App = () => {
   const [quill, setQuill] = useState(null);
+  const quillRef = useRef();
   const [quillSelection, setQuillSelection] = useState([null, null]);
   const [value, setValue] = useState();
   const fonts = useMemo(() => ({
@@ -630,15 +1033,17 @@ export const App = () => {
 
   return (
     <div className="App">
-      <Toolbar quill={quill} fonts={fonts} selection={quillSelection} valueChange={value}/>
-      <QuillEditor fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
-      <div>
-          <Delta delta={value} sizeMap={{
-            small: '14px',
-            large: '26px',
-            huge: '40px'
-          }} indentWidth="3em"/>
-      </div>
+      <ThemeProvider theme={defaultTheme}>
+        <Toolbar quill={quill} quillRef={quillRef} fonts={fonts} selection={quillSelection} quillValue={value}/>
+        <QuillEditor ref={quillRef} fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
+        <div>
+            <Delta delta={value} sizeMap={{
+              small: '14px',
+              large: '26px',
+              huge: '40px'
+            }} indentWidth="3em"/>
+        </div>
+      </ThemeProvider>
     </div>
   );
 };
