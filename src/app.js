@@ -2,6 +2,13 @@ import React, { forwardRef, memo, useMemo, useState, useEffect, useRef, useCallb
 import Quill from "quill";
 import {
   toPairs,
+  complement,
+  converge,
+  concat,
+  identity,
+  nth,
+  mergeAll,
+  objOf,
   isNil,
   has,
   both,
@@ -9,7 +16,9 @@ import {
   invoker,
   useWith,
   equals,
+  merge,
   compose,
+  reduce,
   path,
   keys,
   values,
@@ -72,6 +81,9 @@ import {convertFileToDataURI} from './convert-to-data-uri';
 
 import "./styles.css";
 
+// Functions
+const isNotNil = complement(isNil);
+
 const defaultTheme = createMuiTheme({});
 
 const useSizeMenuStyles = makeStyles({
@@ -95,7 +107,6 @@ const SizeMenu = ({onChange, size = ""}) => {
       label="Size"
       value={size}
       onChange={onSizeChange}
-      id="toolbar-size-select"
       data-cy="toolbar-size-select">
       <MenuItem value="">Normal</MenuItem>
       <MenuItem value="small">Small</MenuItem>
@@ -127,7 +138,6 @@ const HeaderMenu = ({onChange, header = ""}) => {
         label="Header"
         value={header}
         onChange={onHeaderChange}
-        id="toolbar-header-select"
         data-cy="toolbar-header-select">
         <MenuItem value="">None</MenuItem>
         <MenuItem value="1">Header 1</MenuItem>
@@ -155,11 +165,9 @@ const FontMenu = ({onChange, fonts = [], font = ""}) => {
 
   const onFontChange = useCallback(compose(onChange, path(['target', 'value'])), [onChange]);
 
-  const menuItems = useMemo(() => {
-    return map(([label, font]) => (
+  const menuItems = useMemo(() => map(([label, font]) => (
       <MenuItem key={font} value={font}>{label}</MenuItem>
-    ), toPairs(fonts));
-  }, [fonts]);
+    ), toPairs(fonts)), [fonts]);
 
   return (
       <TextField
@@ -168,7 +176,6 @@ const FontMenu = ({onChange, fonts = [], font = ""}) => {
         label="Font"
         value={font}
         onChange={onFontChange}
-        id="toolbar-font-select"
         data-cy="toolbar-font-select">
           <MenuItem value="">None</MenuItem>
           {menuItems}
@@ -549,7 +556,7 @@ const LinkInput = memo(({anchorBounds, link, container, onLinkChange}) => {
   const [open, setOpen] = useState(false);
   const [tempLink, setTempLink] = useState(link);
 
-  //TODO: Consider whether or not this is the best approach.
+  // NOTE: Setting the state during rendering is totally fine.  See https://reactjs.org/docs/hooks-faq.html#how-do-i-implement-getderivedstatefromprops
   useMemo(() => {
     setTempLink(link);
 
@@ -557,7 +564,7 @@ const LinkInput = memo(({anchorBounds, link, container, onLinkChange}) => {
       setOpen(true);
     else
       setOpen(false);
-  }, [link]);
+  }, [link, anchorBounds]); // NOTE: It is important to include the `anchorBounds` so that, if the user clicks on a different link that has the same `url`, it will still reset the input.
 
   const toggleOpen = useCallback(() => setOpen(not), [setOpen]);
 
@@ -621,10 +628,6 @@ const InlineToggleButtonGroup = memo(withStyles({
 })(ToggleButtonGroup));
 
 const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
-
-  if (!quill || !quillRef)
-    return <div />;
-
   const [, updateComponent] = useState();
   const refresh = useMemo(() => compose(updateComponent, uuid), [updateComponent]);
 
@@ -911,28 +914,52 @@ const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
 });
 
 const formats = [
-  'header', //Done
-  'font', //Done
-  'size', //Done
-  'bold', //Done
-  'italic', //Done
-  'underline', //Done
-  'script', //Done
-  'blockquote', //Done
-  'list', //Done
-  'bullet', //Done
-  'indent', //Done
-  'link',//Done
-  'image', //Done
-  'video', //Done
-  'color', //Done
-  'align' //Done
+  'header', // Done
+  'font', // Done
+  'size', // Done
+  'bold', // Done
+  'italic', // Done
+  'underline', // Done
+  'script', // Done
+  'blockquote', // Done
+  'list', // Done
+  'bullet', // Done
+  'indent', // Done
+  'link',// Done
+  'image', // Done
+  'video', // Done
+  'color', // Done
+  'align' // Done
 ];
+
+const generateFontRules = compose(mergeAll, map(converge(objOf, [concat('ql-font-'), objOf('fontFamily')])));
+
+const subPrefix = compose(mergeAll, map(converge(objOf, [compose(concat('& .'), nth(0)), nth(1)])), toPairs);
+
+const defaultQuillStyles = {
+  'ql-align-center': {
+    textAlign: 'center'
+  },
+  'ql-align-right': {
+    textAlign: 'right'
+  }
+};
+
+const useQuillEditorStyles = makeStyles({
+  root: (fonts) => {
+    const fontRules = generateFontRules(fonts);
+
+    return subPrefix(merge(fontRules, defaultQuillStyles));
+  }
+});
 
 const QuillEditor = forwardRef((props, quillRef) => {
   const quillEditor = useRef(null);
   const fonts = props.fonts || [];
 
+  const classes = useQuillEditorStyles(fonts);
+
+  // Fonts Initialization
   useMemo(() => {
     const FontAttributor = Quill.import('attributors/class/font');
 
@@ -941,81 +968,66 @@ const QuillEditor = forwardRef((props, quillRef) => {
     Quill.register(FontAttributor, true);
   }, []);
 
-  useEffect(
-    () => {
-      quillEditor.current = new Quill(quillRef.current, {
-        theme: null,
-        modules: {
-          toolbar: false
-        },
-        formats: props.formats
-      });
-
-      if (props.onEditorInit)
-        props.onEditorInit(quillEditor.current);
-    },
-    [quillRef]
-  );
-
+  // Editor Initialization
   useEffect(() => {
-    if (quillEditor.current && props.onEditorInit)
+    quillEditor.current = new Quill(quillRef.current, {
+      theme: null,
+      modules: {
+        toolbar: false
+      },
+      formats: props.formats
+    });
+
+    return () => {
+      quillEditor.current.destroy();
+    };
+  }, [quillRef]);
+
+  // Fire Initialization Action
+  useEffect(() => {
+    if (isNotNil(quillEditor.current) && isNotNil(props.onEditorInit))
       props.onEditorInit(quillEditor.current);
   }, [quillEditor.current, props.onEditorInit]);
 
-  useEffect(
-    () => {
-      if (
-        quillEditor.current !== null &&
-        typeof props.onChange === 'function'
-      ) {
-        const editor = quillEditor.current;
+  useEffect(() => {
+    if (isNotNil(quillEditor.current) && isNotNil(props.onChange)) {
+      const editor = quillEditor.current;
 
-        const onEditorChange = (eventName) => {
-          if (eventName === 'text-change') {
-            props.onChange(editor.getContents.bind(editor));
-          }
-        };
+      const onEditorChange = (eventName) => {
+        if (eventName === 'text-change')
+          props.onChange(editor.getContents.bind(editor));
+      };
 
-        editor.on('editor-change', onEditorChange);
+      editor.on('editor-change', onEditorChange);
 
-        return () => {
-          editor.off('editor-change', onEditorChange);
-        };
-      }
-    },
-    [quillEditor.current, props.onChange]
+      return () => {
+        editor.off('editor-change', onEditorChange);
+      };
+    }
+  }, [quillEditor.current, props.onChange]);
+
+  useEffect(() => {
+    if (isNotNil(quillEditor.current) && isNotNil(props.onSelectionChange)) {
+      const editor = quillEditor.current;
+
+      const onSelectionChange = (range, oldRange) => {
+        if (range !== null)
+          props.onSelectionChange([range, oldRange]);
+      };
+
+      editor.on('selection-change', onSelectionChange);
+
+      return () => {
+        editor.off('selection-change', onSelectionChange);
+      };
+    }
+  }, [quillEditor.current, props.onSelectionChange]);
+
+  return (
+    <div className={classes.root}>
+      <div ref={quillRef} />
+    </div>
   );
-
-  useEffect(
-    () => {
-      if (quillEditor.current !== null && typeof props.onSelectionChange === 'function') {
-        const editor = quillEditor.current;
-
-        const onSelectionChange = (range, oldRange) => {
-          if (range !== null)
-            props.onSelectionChange([range, oldRange]);
-        };
-
-        editor.on('selection-change', onSelectionChange);
-
-        return () => {
-          editor.off('selection-change', onSelectionChange);
-        };
-      }
-    },
-    [quillEditor.current, props.onSelectionChange]
-  );
-
-  return (<>
-      <style>
-        {fonts.map((font) => `
-          .ql-font-${font} {
-            font-family: ${font};
-          }
-        `).join('')}
-      </style>
-    <div ref={quillRef} />
-  </>);
 });
 
 export const App = () => {
@@ -1031,10 +1043,14 @@ export const App = () => {
 
   const { Delta } = useDelta();
 
+  const toolbar = (quill && quillRef) && (
+    <Toolbar quill={quill} quillRef={quillRef} fonts={fonts} selection={quillSelection} quillValue={value}/>
+  );
+
   return (
     <div className="App">
       <ThemeProvider theme={defaultTheme}>
-        <Toolbar quill={quill} quillRef={quillRef} fonts={fonts} selection={quillSelection} quillValue={value}/>
+        {toolbar}
         <QuillEditor ref={quillRef} fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
         <div>
             <Delta delta={value} sizeMap={{
