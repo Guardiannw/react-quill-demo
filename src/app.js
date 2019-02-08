@@ -1,7 +1,18 @@
-import React, { forwardRef, memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  forwardRef,
+  memo,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback
+} from "react";
 import Quill from "quill";
 import {
+  __,
   toPairs,
+  toString,
+  range,
   complement,
   converge,
   concat,
@@ -29,6 +40,7 @@ import {
 } from "ramda";
 
 import uuid from 'uuid/v4';
+import classNames from 'classnames';
 
 // Material UI
 import { createMuiTheme } from '@material-ui/core/styles';
@@ -270,7 +282,7 @@ const ColorPickerToolbarItem = memo(({color, onColorChange}) => {
   return (
     <>
       <RootRef rootRef={setToolbarButton}>
-        <ToggleButton onChange={toggleOpen} selected={open}>
+        <ToggleButton onChange={toggleOpen} selected={open} data-cy="color-picker-toolbar-button">
           <DynamicFormatColorTextIcon fontColor={color} />
           <ArrowDropDownIcon />
         </ToggleButton>
@@ -627,7 +639,7 @@ const InlineToggleButtonGroup = memo(withStyles({
   }
 })(ToggleButtonGroup));
 
-const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
+const Toolbar = memo(({quill, fonts, quillRef}) => {
   const [, updateComponent] = useState();
   const refresh = useMemo(() => compose(updateComponent, uuid), [updateComponent]);
 
@@ -645,9 +657,7 @@ const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
   }, [quill, quillRef]);
 
   const getAttributes = useCallback(() => quill ? quill.getFormat() : {}, [quill]);
-
   const attributes = getAttributes();
-
   const formats = useMemo(() => keys(attributes), [attributes]);
 
   const handleAlignmentChange = useCallback((event, alignment) => {
@@ -705,25 +715,11 @@ const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
 
   const onScriptChange = useCallback((event) => {
     const format = path(['currentTarget', 'value'], event);
-    const previousValue = getAttributes().script;
+    const previousValue = prop('script', getAttributes());
     quill.format('script', previousValue === format ? false : format);
 
     refresh();
   }, [quill]);
-
-  const script = attributes.script;
-  const alignment = attributes.align;
-  const color = attributes.color;
-  const header = attributes.header;
-  const font = attributes.font;
-  const size = attributes.size;
-  const link = attributes.link;
-  const block = useMemo(() => {
-    if (attributes.list === 'ordered')
-      return 'list-ordered';
-    if (attributes.list === 'bullet')
-      return 'list-unordered';
-  }, [attributes.list]);
 
   const onBlocksChange = useCallback((event) => {
     const key = path(['currentTarget', 'value'], event);
@@ -760,24 +756,23 @@ const Toolbar = memo(({quill, fonts, sizeMap, quillRef}) => {
     refresh();
   }, [quill]);
 
-  const selection = (() => {
-    if (quill)
-      return quill.getSelection();
+  // Active Attributes
+  const script = attributes.script;
+  const alignment = attributes.align;
+  const color = attributes.color;
+  const header = attributes.header;
+  const font = attributes.font;
+  const size = attributes.size;
+  const link = attributes.link;
+  const block = useMemo(() => {
+    if (attributes.list === 'ordered')
+      return 'list-ordered';
+    if (attributes.list === 'bullet')
+      return 'list-unordered';
+  }, [attributes.list]);
 
-    return {
-      index: 0,
-      length: 0
-    };
-  })();
-
-  const bounds = (() => {
-    if (quill) {
-      const {index, length} = selection;
-      const bounds = quill.getBounds(index, length);
-
-      return bounds;
-    }
-  })();
+  const selection = quill ? quill.getSelection() : { index: 0, length: 0 };
+  const bounds = quill && quill.getBounds(selection.index, selection.length);
 
   const linkSelection = useMemo(() => {
     if (!link)
@@ -932,32 +927,63 @@ const formats = [
   'align' // Done
 ];
 
-const generateFontRules = compose(mergeAll, map(converge(objOf, [concat('ql-font-'), objOf('fontFamily')])));
+const generateFontRules = compose(mergeAll, map(converge(objOf, [concat('.ql-font-'), objOf('fontFamily')])));
+const generateSizeRules = compose(mergeAll, map(converge(objOf, [compose(concat('.ql-size-'), nth(0)), compose(objOf('fontSize'), nth(1))])), toPairs);
+const generateIndentRules = (indentWidth) => compose(mergeAll, map(converge(objOf, [concat('.ql-indent-'), compose(objOf('marginLeft'), concat(`calc(${indentWidth} * `), concat(__, ')'))])));
 
-const subPrefix = compose(mergeAll, map(converge(objOf, [compose(concat('& .'), nth(0)), nth(1)])), toPairs);
+const subPrefix = compose(mergeAll, map(converge(objOf, [compose(concat('& '), nth(0)), nth(1)])), toPairs);
 
 const defaultQuillStyles = {
-  'ql-align-center': {
+  '.ql-align-center': {
     textAlign: 'center'
   },
-  'ql-align-right': {
+  '.ql-align-right': {
     textAlign: 'right'
+  },
+  '.ql-align-justify': {
+    textAlign: 'justify'
+  },
+  'p': {
+    marginTop: 0,
+    marginBottom: 0
+  },
+  '.ql-container': {
+    height: '100%'
+  },
+  '.ql-clipboard': {
+    left: -100000,
+    height: 1,
+    overflowY: 'hidden',
+    position: 'absolute',
+    top: '50%'
+  },
+  '.ql-editor': {
+    outline: 'none',
+    height: '100%'
   }
 };
 
 const useQuillEditorStyles = makeStyles({
-  root: (fonts) => {
+  root: ({fonts, sizes, indentWidth}) => {
     const fontRules = generateFontRules(fonts);
+    const sizeRules = generateSizeRules(sizes);
 
-    return subPrefix(merge(fontRules, defaultQuillStyles));
+    const indentSizes = map(toString, range(1, 9));
+    const indentRules = generateIndentRules(indentWidth)(indentSizes);
+
+    return subPrefix(mergeAll([fontRules, sizeRules, indentRules, defaultQuillStyles]));
   }
 });
 
 const QuillEditor = forwardRef((props, quillRef) => {
   const quillEditor = useRef(null);
   const fonts = props.fonts || [];
+  const sizes = props.sizes || {};
+  const indentWidth = props.indentWidth || '3em';
 
-  const classes = useQuillEditorStyles(fonts);
+  const classes = useQuillEditorStyles({fonts, sizes, indentWidth});
+
+  const className = props.className;
 
   // Fonts Initialization
   useMemo(() => {
@@ -1024,10 +1050,17 @@ const QuillEditor = forwardRef((props, quillRef) => {
   }, [quillEditor.current, props.onSelectionChange]);
 
   return (
-    <div className={classes.root}>
+    <div className={classNames(classes.root, className)}>
       <div ref={quillRef} />
     </div>
   );
+});
+
+const useAppStyles = makeStyles({
+  editor: {
+    height: '100%',
+    padding: 10
+  }
 });
 
 export const App = () => {
@@ -1039,7 +1072,16 @@ export const App = () => {
     "Verdana": "verdana",
     "Ariel": "ariel"
   }), []);
+
+  const classes = useAppStyles();
+
   const fontValues = useMemo(() => values(fonts), [fonts]);
+
+  const sizeMap = useMemo(() => ({
+    small: '14px',
+    large: '26px',
+    huge: '40px'
+  }), []);
 
   const { Delta } = useDelta();
 
@@ -1048,18 +1090,12 @@ export const App = () => {
   );
 
   return (
-    <div className="App">
-      <ThemeProvider theme={defaultTheme}>
-        {toolbar}
-        <QuillEditor ref={quillRef} fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
-        <div>
-            <Delta delta={value} sizeMap={{
-              small: '14px',
-              large: '26px',
-              huge: '40px'
-            }} indentWidth="3em"/>
-        </div>
-      </ThemeProvider>
-    </div>
+    <ThemeProvider theme={defaultTheme}>
+      {toolbar}
+      <QuillEditor ref={quillRef} className={classes.editor} sizes={sizeMap} fonts={fontValues} onEditorInit={setQuill} onChange={setValue} onSelectionChange={setQuillSelection} formats={formats} />
+      <div>
+          <Delta delta={value} sizeMap={sizeMap} indentWidth="3em"/>
+      </div>
+    </ThemeProvider>
   );
 };

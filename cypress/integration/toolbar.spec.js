@@ -84,7 +84,7 @@ describe('Toolbar', () => {
 
         cy.contains('Hello').highlight();
 
-        cy.get('[data-cy="toolbar"] [value="color"]').click();
+        cy.get('[data-cy="toolbar"] [data-cy="color-picker-toolbar-button"]').click();
 
         cy.get('input + :contains(r)').prev('input').type('32');
         cy.get('input + :contains(g)').prev('input').type('255');
@@ -101,7 +101,7 @@ describe('Toolbar', () => {
 
         cy.contains('Hello').highlight();
 
-        cy.get('[data-cy="toolbar-header-select"]').closest('label:contains(\'Header\') + div').then(($el) => {
+        cy.get('[data-cy="toolbar-header-select"]').children('label:contains(\'Header\') + div').then(($el) => {
             cy.wrap($el).click();
 
             cy.get('li:contains(\'Header 1\')').click();
@@ -153,7 +153,7 @@ describe('Toolbar', () => {
 
         cy.contains('Hello').highlight();
 
-        cy.get('[data-cy="toolbar-font-select"]').closest('label:contains(\'Font\') + div').then(($el) => {
+        cy.get('[data-cy="toolbar-font-select"]').children('label:contains(\'Font\') + div').then(($el) => {
             cy.wrap($el).click();
 
             cy.get('li:contains(\'Verdana\')').click();
@@ -181,7 +181,7 @@ describe('Toolbar', () => {
 
         cy.contains('Hello').highlight();
 
-        cy.get('[data-cy="toolbar-size-select"]').closest('label:contains(\'Size\') + div').then(($el) => {
+        cy.get('[data-cy="toolbar-size-select"]').children('label:contains(\'Size\') + div').then(($el) => {
             cy.wrap($el).click();
 
             cy.get('li:contains(\'Small\')').click();
